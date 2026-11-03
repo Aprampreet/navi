@@ -16,6 +16,14 @@ export function parseCommand(input: string): Command {
 
 export type Point = {latitude: number; longitude: number};
 export type RouteStep = {point: Point; instruction: string; distanceMeters: number};
+export const MAX_WALKING_SEARCH_METERS = 30000;
+
+export function nearbyWalkingPlaces<T extends {point: Point}>(places: T[], origin: Point): T[] {
+  return places.filter(place => Number.isFinite(place.point?.latitude) &&
+    Number.isFinite(place.point?.longitude) &&
+    distanceMeters(origin, place.point) <= MAX_WALKING_SEARCH_METERS)
+    .sort((a, b) => distanceMeters(origin, a.point) - distanceMeters(origin, b.point));
+}
 
 export function decodePolyline(encoded: string): Point[] {
   const points: Point[] = [];

@@ -7,6 +7,6 @@ const NativeRouteMap = requireNativeComponent<{mapData: string} & ViewProps>('Na
 export function RouteMap({position, destination, route}: {
   position: Point | null; destination: Point | null; route: Point[];
 }) {
-  return <NativeRouteMap accessibilityLabel="Walking route map"
+  return <NativeRouteMap accessible={false} importantForAccessibility="no-hide-descendants"
     mapData={JSON.stringify({position, destination, route})} style={{flex: 1}} />;
 }

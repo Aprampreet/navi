@@ -1,17 +1,22 @@
 export type VoiceIntent = 'start_camera' | 'stop_camera' | 'describe' | 'read_last_text' |
   'repeat' | 'pause_alerts' | 'resume_alerts' | 'mute' | 'unmute' | 'stop' | 'cancel' |
   'destination' | 'confirm_destination' | 'start_navigation' | 'stop_navigation' |
-  'repeat_turn' | 'route_status' | 'refresh_gps' | 'unknown';
+  'repeat_turn' | 'route_status' | 'refresh_gps' | 'change_destination' |
+  'pause_navigation' | 'resume_navigation' |
+  'haptics_on' | 'haptics_off' | 'unknown';
 export type AgentState = 'IDLE' | 'WAKE_LISTENING' | 'COMMAND_LISTENING' |
   'PROCESSING' | 'SPEAKING' | 'ERROR_RECOVERY';
 
 export function parseOfflineCommand(input: string): VoiceIntent {
   const text = input.toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
   if (extractDestination(input)) return 'destination';
+  if (/^(?:change|new|another) destination$/.test(text)) return 'change_destination';
   if (/^(?:confirm|choose|select)(?: the)? (?:(?:first|second|third|fourth|fifth|[1-5]) )?(?:destination|result|option|place)(?: (?:number )?(?:one|two|three|four|five|[1-5]))?$/.test(text) ||
       /^(?:option|result|destination|place) (?:number )?(?:one|two|three|four|five|[1-5])$/.test(text)) return 'confirm_destination';
-  if (/^(?:start|begin|continue|resume)(?: the)? (?:walking )?(?:navigation|guidance|route)$/.test(text) ||
+  if (/^resume(?: the)? (?:walking )?(?:navigation|guidance|route)$/.test(text)) return 'resume_navigation';
+  if (/^(?:start|begin|continue)(?: the)? (?:walking )?(?:navigation|guidance|route)$/.test(text) ||
       /^(?:start|begin) walking$/.test(text)) return 'start_navigation';
+  if (/^pause(?: the)? (?:walking )?(?:navigation|guidance|route)$/.test(text)) return 'pause_navigation';
   if (/^(?:stop|end)(?: the)? (?:walking )?(?:navigation|guidance|route)$/.test(text)) return 'stop_navigation';
   if (/^(?:repeat|say)(?: the)? (?:turn|instruction|next instruction)(?: again)?$/.test(text) ||
       /^(?:what is|what s) (?:the )?next (?:turn|instruction)$/.test(text)) return 'repeat_turn';
@@ -26,6 +31,8 @@ export function parseOfflineCommand(input: string): VoiceIntent {
   if (/^(?:resume|restart|continue) (?:the )?(?:alerts|obstacle alerts)$/.test(text)) return 'resume_alerts';
   if (/^(?:mute|mute voice|be quiet)$/.test(text)) return 'mute';
   if (/^(?:unmute|unmute voice|speak again)$/.test(text)) return 'unmute';
+  if (/^(?:turn on|enable|start) (?:the )?(?:haptics|vibration|vibrations)$/.test(text)) return 'haptics_on';
+  if (/^(?:turn off|disable|stop) (?:the )?(?:haptics|vibration|vibrations)$/.test(text)) return 'haptics_off';
   if (/^(?:stop|stop everything|stop navigation)$/.test(text)) return 'stop';
   if (/^(?:cancel|never mind|nevermind)$/.test(text)) return 'cancel';
   return 'unknown';

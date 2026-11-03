@@ -10,6 +10,18 @@ let publicQueue = Promise.resolve();
 const validPoint = p => p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude) &&
   Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180;
 const point = coordinates => ({latitude: coordinates[1], longitude: coordinates[0]});
+const walkingSearchRadiusMeters = 30000;
+const distanceMeters = (a, b) => {
+  const radians = Math.PI / 180;
+  const latitude = (b.latitude - a.latitude) * radians;
+  const longitude = (b.longitude - a.longitude) * radians;
+  const h = Math.sin(latitude / 2) ** 2 + Math.cos(a.latitude * radians) *
+    Math.cos(b.latitude * radians) * Math.sin(longitude / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+};
+export const nearbyWalkingPlaces = (places, origin) => places
+  .filter(place => validPoint(place.point) && distanceMeters(origin, place.point) <= walkingSearchRadiusMeters)
+  .sort((a, b) => distanceMeters(origin, a.point) - distanceMeters(origin, b.point));
 const send = (res, status, body) => {
   res.writeHead(status, {'Content-Type': 'application/json'});
   res.end(JSON.stringify(body));
@@ -56,11 +68,11 @@ async function searchPlaces(query, origin) {
     }));
   } else {
     places = await nominatimSearch(query, origin);
+    places = nearbyWalkingPlaces(places, origin);
     // Heritage Street is a corridor, not a single mapped POI. Offer its
     // Town Hall entrance as an explicitly approximate, confirmable result.
     if (!places.length && /heritage\s+(?:street|walk)/i.test(query) &&
-        (/amritsar/i.test(query) ||
-          (Math.abs(origin.latitude - 31.6257) < 0.2 && Math.abs(origin.longitude - 74.879) < 0.2))) {
+        (Math.abs(origin.latitude - 31.6257) < 0.2 && Math.abs(origin.longitude - 74.879) < 0.2)) {
       const entrance = (await nominatimSearch('Partition Museum Amritsar', origin))
         .find(p => p.name.toLowerCase() === 'partition museum');
       if (entrance) places = [{...entrance, id: 'heritage-street-town-hall-entrance',
@@ -68,6 +80,7 @@ async function searchPlaces(query, origin) {
         address: 'Near Partition Museum, Amritsar · approximate entrance'}];
     }
   }
+  places = nearbyWalkingPlaces(places, origin);
   cache.set(cacheKey, {value: places, expires: Date.now() + 10 * 60_000});
   return places;
 }
@@ -88,7 +101,9 @@ async function nominatimSearch(query, origin) {
     })).filter(p => validPoint(p.point));
 }
 
-async function walkingRoute(origin, destination) {
+export async function walkingRoute(origin, destination) {
+  if (distanceMeters(origin, destination) > walkingSearchRadiusMeters)
+    throw new Error('Destination is too far for a walking route from your current GPS location');
   if (orsKey) {
     const data = await upstream('https://api.heigit.org/openrouteservice/v2/directions/foot-walking/geojson', {
       method: 'POST', headers: {'Content-Type': 'application/json', Authorization: orsKey},

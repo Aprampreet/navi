@@ -1,7 +1,7 @@
 // 5: assistance unavailable; 4: route turn; 3: confirmed spatial change;
 // 2: cautious apparent approach; 1: routine observation.
 export type AlertPriority = 1 | 2 | 3 | 4 | 5;
-export type AlertSource = 'camera' | 'navigation' | 'reading' | 'system' | 'agent' | 'agent_wake';
+export type AlertSource = 'camera' | 'navigation' | 'reading' | 'system' | 'agent' | 'agent_wake' | 'ui';
 type Alert = {text: string; priority: AlertPriority; key: string;
   source: AlertSource; queuedAt: number};
 export class AlertManager {
@@ -18,7 +18,7 @@ export class AlertManager {
     private onError?: (error: unknown, source: AlertSource) => void) {}
   enqueue(text: string, priority: AlertPriority, key = text, now = Date.now(),
     source: AlertSource = 'system'): boolean {
-    if ((this.muted && source !== 'agent' && source !== 'agent_wake') ||
+    if ((this.muted && source !== 'agent' && source !== 'agent_wake' && source !== 'ui') ||
       (this.paused && (source === 'camera' || source === 'reading')) ||
       (this.commandListening && (source === 'reading' || (source === 'camera' && priority < 3)))) return false;
     if (now - (this.last.get(key) ?? -Infinity) < this.cooldownMs) return false;
@@ -39,7 +39,7 @@ export class AlertManager {
     this.running = true;
     while (this.queue.length) {
       const alert = this.queue.shift()!;
-      if ((this.muted && alert.source !== 'agent' && alert.source !== 'agent_wake') ||
+      if ((this.muted && alert.source !== 'agent' && alert.source !== 'agent_wake' && alert.source !== 'ui') ||
         ((alert.source === 'camera' || alert.source === 'reading') &&
         (this.paused || (this.commandListening && (alert.source === 'reading' || alert.priority < 3)) ||
           Date.now() - alert.queuedAt > 4000))) continue;

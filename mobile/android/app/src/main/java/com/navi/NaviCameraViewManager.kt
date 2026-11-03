@@ -37,8 +37,10 @@ class NaviCameraViewManager(private val context: ReactApplicationContext,
   override fun getName() = "NaviCameraView"
   override fun createViewInstance(reactContext: com.facebook.react.uimanager.ThemedReactContext): PreviewView =
     PreviewView(reactContext).apply {
-      implementationMode = PreviewView.ImplementationMode.PERFORMANCE
-      scaleType = PreviewView.ScaleType.FIT_CENTER
+      // TextureView keeps PreviewView's transform correct when React Native
+      // moves this mounted view between the visible and retained tab positions.
+      implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+      scaleType = PreviewView.ScaleType.FILL_CENTER
     }
 
   private fun stopCamera() {
