@@ -1,12 +1,15 @@
 package com.navi
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
@@ -24,8 +27,29 @@ import java.util.Locale
 class NaviNativeModule(private val context: ReactApplicationContext,
   private val ocrController: NaviOcrController) : ReactContextBaseJavaModule(context) {
   override fun getName() = "NaviNative"
-  private var recognizer: SpeechRecognizer? = null
-  private var pendingSpeech: Promise? = null
+  private val voice = NaviOfflineVoice(context)
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+  private val focusListener = AudioManager.OnAudioFocusChangeListener { }
+  private val focusRequest: AudioFocusRequest? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+    AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+      .setAudioAttributes(AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+      .setOnAudioFocusChangeListener(focusListener).build() else null
+
+  @Suppress("DEPRECATION")
+  private fun requestSpeechFocus(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+    audioManager.requestAudioFocus(focusRequest!!) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+  else audioManager.requestAudioFocus(focusListener,
+    AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK) ==
+    AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+
+  @Suppress("DEPRECATION")
+  private fun abandonSpeechFocus() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) audioManager.abandonAudioFocusRequest(focusRequest!!)
+    else audioManager.abandonAudioFocus(focusListener)
+  }
   @Volatile private var ttsReady = false
   @Volatile private var offlineVoice: Voice? = null
   private val tts: TextToSpeech = TextToSpeech(context) { status ->
@@ -45,20 +69,30 @@ class NaviNativeModule(private val context: ReactApplicationContext,
   init {
     tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
       override fun onStart(utteranceId: String) = Unit
-      override fun onDone(utteranceId: String) { synchronized(utterances) { utterances.remove(utteranceId)?.resolve(null) } }
+      override fun onDone(utteranceId: String) {
+        synchronized(utterances) { utterances.remove(utteranceId)?.resolve(null) }
+        mainHandler.postDelayed({ if (synchronized(utterances) { utterances.isEmpty() }) {
+          voice.setSpeechActive(false); abandonSpeechFocus()
+        } }, 250)
+      }
       @Deprecated("Deprecated in Java")
       override fun onError(utteranceId: String) {
         synchronized(utterances) { utterances.remove(utteranceId)?.reject("TTS_ERROR", "Speech failed") }
+        mainHandler.post { voice.setSpeechActive(false); abandonSpeechFocus() }
       }
     })
   }
 
   @ReactMethod fun speak(text: String, promise: Promise) {
     if (!ttsReady) { promise.reject("TTS_UNAVAILABLE", "Text-to-speech is unavailable"); return }
+    if (!requestSpeechFocus()) { promise.reject("AUDIO_FOCUS_DENIED", "Speech audio is unavailable"); return }
     val id = System.nanoTime().toString()
     synchronized(utterances) { utterances[id] = promise }
+    voice.setSpeechActive(true)
     if (tts.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.ERROR) {
       synchronized(utterances) { utterances.remove(id)?.reject("TTS_ERROR", "Speech failed to start") }
+      voice.setSpeechActive(false)
+      abandonSpeechFocus()
     }
   }
   @ReactMethod fun getOfflineVoiceStatus(promise: Promise) {
@@ -85,6 +119,8 @@ class NaviNativeModule(private val context: ReactApplicationContext,
   }
   @ReactMethod fun stopSpeech(promise: Promise) {
     tts.stop()
+    voice.setSpeechActive(false)
+    abandonSpeechFocus()
     synchronized(utterances) {
       utterances.values.forEach { it.reject("TTS_STOPPED", "Speech stopped") }
       utterances.clear()
@@ -92,44 +128,11 @@ class NaviNativeModule(private val context: ReactApplicationContext,
     promise.resolve(null)
   }
 
-  @ReactMethod fun listen(promise: Promise) {
-    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-      promise.reject("MIC_DENIED", "Microphone permission is required"); return
-    }
-    if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-      promise.reject("SPEECH_UNAVAILABLE", "No Android speech recognition service found"); return
-    }
-    context.currentActivity?.runOnUiThread {
-      recognizer?.destroy()
-      pendingSpeech?.reject("CANCELLED", "Previous recognition cancelled")
-      pendingSpeech = promise
-      recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-      setRecognitionListener(object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) = Unit
-        override fun onBeginningOfSpeech() = Unit
-        override fun onRmsChanged(rmsdB: Float) = Unit
-        override fun onBufferReceived(buffer: ByteArray?) = Unit
-        override fun onEndOfSpeech() = Unit
-        override fun onPartialResults(partialResults: Bundle?) = Unit
-        override fun onEvent(eventType: Int, params: Bundle?) = Unit
-        override fun onError(error: Int) { pendingSpeech?.reject("SPEECH_ERROR", "Recognition error $error"); pendingSpeech = null }
-        override fun onResults(results: Bundle?) {
-          pendingSpeech?.resolve(results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: "")
-          pendingSpeech = null
-        }
-      })
-      startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-      })
-      }
-    } ?: promise.reject("NO_ACTIVITY", "App is not active")
-  }
-  @ReactMethod fun cancelListen(promise: Promise) {
-    context.currentActivity?.runOnUiThread { recognizer?.cancel() }
-    pendingSpeech?.reject("CANCELLED", "Recognition cancelled"); pendingSpeech = null
-    promise.resolve(null)
-  }
+  @ReactMethod fun startVoiceAgent(promise: Promise) { mainHandler.post { voice.start(promise) } }
+  @ReactMethod fun stopVoiceAgent(promise: Promise) { mainHandler.post { voice.stop(promise) } }
+  @ReactMethod fun beginVoiceCommand(promise: Promise) { mainHandler.post { voice.beginCommand(promise) } }
+  @ReactMethod fun resumeVoiceCommand(promise: Promise) { mainHandler.post { voice.resumeCommand(promise) } }
+  @ReactMethod fun finishVoiceCommand(promise: Promise) { mainHandler.post { voice.finishCommand(promise) } }
 
   @ReactMethod fun getLocation(promise: Promise) {
     if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -149,6 +152,6 @@ class NaviNativeModule(private val context: ReactApplicationContext,
   @ReactMethod fun removeListeners(count: Int) = Unit
 
   override fun invalidate() {
-    recognizer?.destroy(); ocrController.close(); tts.shutdown(); super.invalidate()
+    voice.stop(); ocrController.close(); tts.shutdown(); super.invalidate()
   }
 }

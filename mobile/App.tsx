@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {AppState, NativeEventEmitter, NativeModules, PermissionsAndroid, Pressable,
+import {AppState, NativeEventEmitter, NativeModules, PermissionsAndroid, Pressable, Vibration,
   ScrollView, StyleSheet, Text, View} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {SafeAreaProvider, useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import {movementCues, ObjectTracker} from './src/tracking';
 import {parseCommand, formatInstruction, shouldAdvanceStep, distanceMeters, type Point, type RouteStep} from './src/navigation';
 import {searchPlaces, walkingRoute, type Place} from './src/mapsApi';
 import {AmbientReadingTracker, type TextBlock} from './src/reading';
+import {destinationChoice, extractDestination, VoiceAgentController} from './src/voiceAgent';
 
 const Native = NativeModules.NaviNative;
 type Fix = Point & {accuracy: number};
@@ -45,6 +46,7 @@ function NaviApp() {
   const [muted, setMuted] = useState(false);
   const [prefsReady, setPrefsReady] = useState(false);
   const [listening, setListening] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState('Offline voice starting…');
   const [status, setStatus] = useState('Ready. Camera must face forward and remain uncovered.');
   const [error, setError] = useState('');
   const [fix, setFix] = useState<Fix | null>(null);
@@ -62,6 +64,14 @@ function NaviApp() {
   const [sceneSummary, setSceneSummary] = useState('');
   const [approachNote, setApproachNote] = useState('');
   const [lastReading, setLastReading] = useState('');
+  const sceneRef = useRef({text: '', at: 0});
+  const readingRef = useRef('');
+  const instructionRef = useRef('');
+  const voiceStartingCamera = useRef(false);
+  const directVoiceInput = useRef(false);
+  const endVoiceSession = useRef(false);
+  const voiceAgent = useRef(new VoiceAgentController());
+  const commandHandler = useRef<(text: string) => Promise<void>>(async () => {});
   const readingTracker = useRef(new AmbientReadingTracker());
   const readingInFlight = useRef(false);
   const stepIndex = useRef(0);
@@ -70,11 +80,27 @@ function NaviApp() {
   const sceneTracker = useRef(new SceneTracker());
   const objectTracker = useRef(new ObjectTracker());
   const approachEstimator = useRef(new ApproachEstimator());
-  const alerts = useMemo(() => new AlertManager((text, source) => source === 'reading' ?
-    Native.speakOffline(text) : Native.speak(text), 5000, (cause, source) => {
+  const alerts = useMemo(() => new AlertManager(async (text, source) => {
+    if (source === 'reading' || source === 'agent' || source === 'agent_wake') await Native.speakOffline(text);
+    else await Native.speak(text);
+    if (source === 'agent_wake' && !endVoiceSession.current) await Native.resumeVoiceCommand();
+    if (source === 'agent') {
+      await Native.finishVoiceCommand();
+      voiceAgent.current.ready();
+      setListening(false);
+      setVoiceStatus('OFFLINE VOICE READY · “HI NAVI” IS EXPERIMENTAL');
+    }
+  }, 5000, (cause, source) => {
     if (source === 'reading') setError(`Offline speech unavailable: ${String(cause)}. The reading is shown on screen.`);
+    if (source === 'agent' || source === 'agent_wake') {
+      if (endVoiceSession.current) return;
+      setError(`Offline voice response failed: ${String(cause)}`);
+      voiceAgent.current.error();
+      Native.finishVoiceCommand().then(() => voiceAgent.current.ready()).catch(() => {});
+      setListening(false);
+    }
   }), []);
-  alerts.muted = muted || listening; alerts.paused = paused;
+  alerts.muted = muted; alerts.paused = paused; alerts.commandListening = listening;
 
   useEffect(() => {
     AsyncStorage.getItem('navi.muted').then(value => {
@@ -111,7 +137,9 @@ function NaviApp() {
       }
       const scene = sceneTracker.current.update(tracked.objects.map(object => object.box));
       const approach = approachEstimator.current.update(tracked);
-      setSceneSummary(describeScene(scene.counts));
+      const summary = describeScene(scene.counts);
+      sceneRef.current = {text: scene.hasStableObjects ? summary : '', at: receivedAt};
+      setSceneSummary(summary);
       setApproachNote(approach.observations.some(observation => observation.zone === 'centre' &&
         observation.state === 'UNKNOWN' && observation.logScaleChange !== null &&
         Math.abs(observation.logScaleChange) >= 0.18) ?
@@ -128,6 +156,7 @@ function NaviApp() {
     });
     const cameraError = emitter.addListener('NaviCameraError', (event: Object) => {
       setError(`Camera or model unavailable: ${(event as {message: string}).message}`);
+      sceneRef.current = {text: '', at: 0}; readingRef.current = '';
       readingTracker.current.reset(); setLastReading('');
       setStatus('Camera unavailable'); cameraReadyRef.current = false; setCameraReady(false); setAssisting(false);
       setNavigating(false); setSceneSummary(''); setApproachNote(''); setLastCue('');
@@ -143,7 +172,9 @@ function NaviApp() {
       cameraReadyRef.current = true;
       setCameraReady(true);
       setStatus('Detecting objects in the camera view');
-      alerts.enqueue('Assistance started. Camera detection is active.', 2, 'assistance-start');
+      if (!voiceStartingCamera.current)
+        alerts.enqueue('Assistance started. Camera detection is active.', 2, 'assistance-start');
+      voiceStartingCamera.current = false;
     });
     const appState = AppState.addEventListener('change', state => {
       if (state === 'background') {
@@ -153,10 +184,65 @@ function NaviApp() {
         performanceWindow.current = {since: 0, frames: 0, inferenceTotal: 0, deliveryTotal: 0};
         sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
         readingTracker.current.reset(); setLastReading('');
+        sceneRef.current = {text: '', at: 0}; readingRef.current = '';
         alerts.clear(); Native.stopSpeech();
+        Native.stopVoiceAgent().catch(() => {});
+      } else if (state === 'active') {
+        PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)
+          .then(granted => { if (granted) Native.startVoiceAgent().catch(() => {}); });
       }
     });
     return () => { detections.remove(); cameraError.remove(); cameraStarted.remove(); appState.remove(); };
+  }, [alerts]);
+
+  useEffect(() => {
+    const emitter = new NativeEventEmitter(Native);
+    const ready = emitter.addListener('NaviVoiceReady', () => {
+      voiceAgent.current.activate();
+      setVoiceStatus('OFFLINE VOICE READY · “HI NAVI” IS EXPERIMENTAL');
+    });
+    const wake = emitter.addListener('NaviVoiceWake', () => {
+      if (!voiceAgent.current.wake()) return;
+      endVoiceSession.current = false;
+      directVoiceInput.current = false;
+      Vibration.vibrate(40);
+      setListening(true);
+      setVoiceStatus('LISTENING FOR COMMAND');
+      alerts.clearCamera(); alerts.clearReading();
+      alerts.enqueue("I'm listening.", 5, `voice-wake-${Date.now()}`, Date.now(), 'agent_wake');
+    });
+    const command = emitter.addListener('NaviVoiceCommand', (event: Object) => {
+      Vibration.vibrate(25);
+      commandHandler.current((event as {text: string}).text).catch(cause => {
+        setError(`Voice command failed: ${String(cause)}`);
+        Native.finishVoiceCommand().catch(() => {});
+        setListening(false);
+      });
+    });
+    const timeout = emitter.addListener('NaviVoiceTimeout', (event: Object) => {
+      directVoiceInput.current = false;
+      endVoiceSession.current = true;
+      setListening(false);
+      voiceAgent.current.ready();
+      setVoiceStatus('OFFLINE VOICE READY · “HI NAVI” IS EXPERIMENTAL');
+      alerts.enqueue((event as {text: string}).text || 'I did not hear a command. Try again.', 5,
+        `voice-timeout-${Date.now()}`, Date.now(), 'agent');
+    });
+    const failure = emitter.addListener('NaviVoiceError', (event: Object) => {
+      directVoiceInput.current = false;
+      voiceAgent.current.error(); setListening(false);
+      setVoiceStatus('OFFLINE VOICE UNAVAILABLE');
+      setError(`Offline microphone: ${(event as {text: string}).text || 'unavailable'}. Use the on-screen controls.`);
+    });
+    PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO).then(granted => {
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        Native.startVoiceAgent().catch((cause: unknown) => {
+          setVoiceStatus('OFFLINE VOICE UNAVAILABLE');
+          setError(`Offline voice could not start: ${String(cause)}`);
+        });
+      } else setVoiceStatus('MICROPHONE PERMISSION NEEDED');
+    });
+    return () => { ready.remove(); wake.remove(); command.remove(); timeout.remove(); failure.remove(); };
   }, [alerts]);
 
   async function request(permission: string): Promise<boolean> {
@@ -185,7 +271,7 @@ function NaviApp() {
     void refreshLocation();
     return true;
   }
-  function stop() {
+  function stop(announce = true) {
     readingTracker.current.reset(); setLastReading('');
     cameraReadyRef.current = false; setCameraReady(false); setLatency(null); setFps(null);
     setDeliveryMs(null); performanceWindow.current = {since: 0, frames: 0,
@@ -195,66 +281,202 @@ function NaviApp() {
     setLastInstruction(''); setTranscript(''); setLastCue(''); setSceneSummary(''); setApproachNote('');
     sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
     alerts.clear(); Native.stopSpeech(); setStatus('Navigation stopped');
-    alerts.enqueue('Navigation stopped.', 2, 'navigation-stop');
+    if (announce) alerts.enqueue('Navigation stopped.', 2, 'navigation-stop');
+  }
+  function stopCameraOnly() {
+    cameraReadyRef.current = false; setCameraReady(false); setAssisting(false);
+    sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
+    readingTracker.current.reset(); sceneRef.current = {text: '', at: 0}; readingRef.current = '';
+    setSceneSummary(''); setApproachNote(''); setLastCue(''); setLastReading('');
+    alerts.clearCamera(); alerts.clearReading();
+    setStatus(navigating ? 'Camera stopped. Walking guidance continues.' : 'Camera assistance stopped.');
+  }
+  function stopNavigationOnly() {
+    setNavigating(false); setPoints([]); setSteps([]); setPlaces([]); setSelected(null);
+    setLastInstruction(''); instructionRef.current = '';
+    stepIndex.current = 0; approachingStep.current = -1;
+    alerts.clearNavigation();
+    setStatus(assisting ? 'Walking guidance stopped. Camera assistance continues.' : 'Walking guidance stopped.');
   }
   async function listen() {
     setError('');
     if (!await request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)) {
-      setError('Microphone permission denied.'); return;
+      setError('Microphone permission denied. Use the on-screen controls.'); return;
     }
-    alerts.muted = true;
-    alerts.clear();
-    await Native.stopSpeech();
-    setListening(true); setStatus('Listening');
     try {
-      const text: string = await Native.listen(); setTranscript(text);
-      setListening(false); alerts.muted = muted;
-      const command = parseCommand(text);
-      if (command.type === 'stop') stop();
-      else if (command.type === 'repeat') repeat();
-      else if (command.type === 'pause') {
-        alerts.paused = true; alerts.clearCamera(); setPaused(true); setStatus('Obstacle alerts paused');
-      }
-      else if (command.type === 'destination') {
-        const location = fix || await refreshLocation(); if (!location) return;
-        setNavigating(false); setPoints([]); setSteps([]); setSelected(null);
-        setLastInstruction(''); stepIndex.current = 0; approachingStep.current = -1;
-        setStatus(`Searching for ${command.destination}`);
-        const results = await searchPlaces(command.destination, location);
-        setPlaces(results);
-        if (!results.length) throw new Error('No matching destination found');
-        setStatus('Destination found. Choose and confirm a place.');
-        alerts.enqueue(`${results[0].name} found. Please confirm the destination.`, 2, 'place');
-      } else {
-        setStatus('Awaiting destination command');
-        setError('Command not understood. Try “Navigate to” followed by a destination.');
-      }
-    } catch (e) { setStatus('Error'); setError(`Speech or search failed: ${String(e)}`); }
-    finally { alerts.muted = muted; setListening(false); }
+      await Native.startVoiceAgent();
+      await Native.beginVoiceCommand();
+      endVoiceSession.current = false;
+      directVoiceInput.current = true;
+      voiceAgent.current.activate(); voiceAgent.current.wake();
+      setListening(true); setVoiceStatus('LISTENING FOR COMMAND');
+      Vibration.vibrate(40);
+      alerts.clearCamera(); alerts.clearReading();
+      alerts.enqueue("I'm listening.", 5, `voice-button-${Date.now()}`, Date.now(), 'agent_wake');
+    } catch (cause) { setError(`Offline microphone unavailable: ${String(cause)}`); }
   }
-  async function confirm(place: Place) {
-    const origin = await refreshLocation(); if (!origin) return;
+  function endVoiceSessionNow() {
+    endVoiceSession.current = true;
+    directVoiceInput.current = false;
+    alerts.clearAgent();
+    if (alerts.currentSource === 'agent' || alerts.currentSource === 'agent_wake') Native.stopSpeech();
+    Native.finishVoiceCommand().catch(() => {});
+    voiceAgent.current.ready();
+    setListening(false);
+    setVoiceStatus('OFFLINE VOICE READY · “HI NAVI” IS EXPERIMENTAL');
+  }
+
+  async function searchDestination(destination: string) {
+    const location = fix || await refreshLocation();
+    if (!location) throw new Error('GPS is unavailable for place search');
+    setNavigating(false); setPoints([]); setSteps([]); setSelected(null);
+    setLastInstruction(''); instructionRef.current = '';
+    stepIndex.current = 0; approachingStep.current = -1;
+    setStatus(`Searching for ${destination}`);
+    const results = await searchPlaces(destination, location);
+    setPlaces(results);
+    if (!results.length) throw new Error('No matching destination found');
+    setStatus('Destination found. Choose and confirm a place.');
+    return `I found ${results.length} ${results.length === 1 ? 'place' : 'places'}. ` +
+      `First: ${results[0].name}, ${results[0].address}. ` +
+      (results.length === 1 ? 'Say Hi NAVI, then confirm destination.' :
+        'Check the results on screen. Say Hi NAVI, then confirm first destination, or choose another option.');
+  }
+  async function confirm(place: Place, announce = true): Promise<boolean> {
+    const origin = await refreshLocation(); if (!origin) return false;
     try {
       setError(''); setSelected(place); setStatus(`Loading walking route to ${place.name}`);
       const route = await walkingRoute(origin, place.point);
       setPoints(route.points); setSteps(route.steps); stepIndex.current = 0; approachingStep.current = -1;
       setStatus('Route ready. Start navigation when ready.');
-      alerts.enqueue(`Route ready to ${place.name}. Start navigation when ready.`, 2, 'route-ready');
-    } catch (e) { setError(`Walking route unavailable: ${String(e)}`); }
+      if (announce) alerts.enqueue(`Route ready to ${place.name}. Start navigation when ready.`, 2, 'route-ready');
+      return true;
+    } catch (e) { setError(`Walking route unavailable: ${String(e)}`); return false; }
   }
   const announceStep = useCallback((step: RouteStep) => {
     const instruction = formatInstruction(step.instruction);
-    setLastInstruction(instruction);
+    setLastInstruction(instruction); instructionRef.current = instruction;
     alerts.enqueue(instruction, 4, `step-${stepIndex.current}`, Date.now(), 'navigation');
   }, [alerts]);
-  async function startNavigation() {
-    if (!steps.length) { setError('No route steps available.'); return; }
-    if (!assisting && !await startAssistance()) return;
-    setNavigating(true); setStatus('Navigating and detecting'); announceStep(steps[0]);
+  async function startNavigation(announce = true): Promise<boolean> {
+    if (!steps.length) { setError('No route steps available.'); return false; }
+    if (!assisting && !await startAssistance()) return false;
+    setNavigating(true); setStatus('Navigating and detecting');
+    if (announce) announceStep(steps[0]);
+    else {
+      const instruction = formatInstruction(steps[0].instruction);
+      setLastInstruction(instruction); instructionRef.current = instruction;
+    }
+    return true;
   }
   function repeat() {
     if (lastInstruction) alerts.enqueue(lastInstruction, 4, `repeat-${Date.now()}`, Date.now(), 'navigation');
   }
+
+  async function handleVoiceCommand(text: string) {
+    setTranscript(text);
+    const intent = voiceAgent.current.command(text);
+    endVoiceSession.current = false;
+    let response = '';
+    try {
+      switch (intent) {
+        case 'start_camera': {
+          if (assisting && cameraReadyRef.current) { response = 'Camera assistance is already active.'; break; }
+          voiceStartingCamera.current = true;
+          if (!await startAssistance()) { voiceStartingCamera.current = false; response = 'Camera permission is needed. Use the on-screen controls.'; break; }
+          const deadline = Date.now() + 8000;
+          while (!cameraReadyRef.current && Date.now() < deadline) {
+            await new Promise<void>(resolve => setTimeout(resolve, 200));
+          }
+          voiceStartingCamera.current = false;
+          response = cameraReadyRef.current ? 'Camera assistance started.' : 'The camera did not start. Please check the screen.';
+          break;
+        }
+        case 'stop_camera':
+          if (assisting) { stopCameraOnly(); response = 'Camera assistance stopped.'; }
+          else response = 'Camera assistance is already off.';
+          break;
+        case 'describe': {
+          const scene = sceneRef.current;
+          response = cameraReadyRef.current && scene.text && Date.now() - scene.at <= 3500 ?
+            `${scene.text} visible in the camera view.` : "I don't have a reliable current camera view.";
+          break;
+        }
+        case 'read_last_text': response = readingRef.current || 'I have not read clear text yet.'; break;
+        case 'destination': {
+          const destination = extractDestination(text);
+          response = destination ? await searchDestination(destination) : 'Please say a destination after go to.';
+          break;
+        }
+        case 'confirm_destination': {
+          if (!places.length) { response = 'No destination results are available. Say Hi NAVI, then go to a place.'; break; }
+          const choice = destinationChoice(text);
+          if (choice === null && places.length > 1) {
+            response = 'There are multiple results. Say confirm first destination, or name an option number.';
+            break;
+          }
+          const place = places[choice ?? 0];
+          if (!place) { response = `That option is unavailable. Choose from one to ${places.length}.`; break; }
+          response = await confirm(place, false) ?
+            `Walking route ready to ${place.name}. Say Hi NAVI, then start walking guidance when ready.` :
+            'I could not create a walking route. Check the connection and try again.';
+          break;
+        }
+        case 'start_navigation': {
+          if (navigating) { response = 'Walking guidance is already active.'; break; }
+          if (!steps.length) { response = 'No route is ready. Say Hi NAVI, then go to your destination.'; break; }
+          voiceStartingCamera.current = !assisting;
+          const started = await startNavigation(false);
+          if (!started) voiceStartingCamera.current = false;
+          response = started ? `Walking guidance started. ${formatInstruction(steps[0].instruction)}` :
+            'Walking guidance could not start. Check camera permission and the route on screen.';
+          break;
+        }
+        case 'stop_navigation':
+          if (navigating || steps.length) { stopNavigationOnly(); response = 'Walking guidance stopped. Camera assistance continues if it is on.'; }
+          else response = 'Walking guidance is already off.';
+          break;
+        case 'repeat_turn': response = instructionRef.current || 'There is no walking instruction yet.'; break;
+        case 'route_status': response = navigating ?
+          `Walking guidance to ${selected?.name || 'your destination'} is active. Next: ${instructionRef.current || 'follow the route on screen'}.` :
+          steps.length ? `A walking route to ${selected?.name || 'your destination'} is ready. Say Hi NAVI, then start walking guidance.` :
+          places.length ? 'Destination results are waiting for your confirmation.' : 'No walking route is loaded.';
+          break;
+        case 'refresh_gps': {
+          const location = await refreshLocation();
+          response = location ? `GPS updated. Reported accuracy is about ${Math.round(location.accuracy)} metres.` :
+            'GPS is unavailable. Check location permission and try again.';
+          break;
+        }
+        case 'repeat': response = voiceAgent.current.lastResponse || instructionRef.current || 'There is nothing to repeat yet.'; break;
+        case 'pause_alerts':
+          alerts.paused = true; alerts.clearCamera(); alerts.clearReading(); setPaused(true);
+          response = 'Camera and text alerts paused.'; break;
+        case 'resume_alerts':
+          alerts.paused = false; setPaused(false); response = 'Camera and text alerts resumed.'; break;
+        case 'mute':
+          alerts.muted = true; setMuted(true); alerts.clearCamera(); alerts.clearReading();
+          response = 'Voice alerts muted. You can say Hi NAVI, then unmute.'; break;
+        case 'unmute': alerts.muted = false; setMuted(false); response = 'Voice alerts unmuted.'; break;
+        case 'stop': stop(false); response = 'Navigation and camera stopped.'; break;
+        case 'cancel': response = 'Cancelled.'; break;
+        default: {
+          const oldCommand = parseCommand(text);
+          if (directVoiceInput.current && oldCommand.type === 'destination')
+            response = await searchDestination(oldCommand.destination);
+          else response = 'I did not understand. Try go to a destination, start walking guidance, or describe my surroundings.';
+        }
+      }
+    } catch (cause) {
+      response = `I could not complete that command. ${String(cause)}`;
+      setError(response);
+    }
+    if (intent !== 'repeat') voiceAgent.current.speaking(response);
+    directVoiceInput.current = false;
+    setVoiceStatus('RESPONDING');
+    alerts.enqueue(response, 5, `voice-response-${Date.now()}`, Date.now(), 'agent');
+  }
+  commandHandler.current = handleVoiceCommand;
 
   useEffect(() => {
     if (!assisting || !cameraReady) return;
@@ -271,7 +493,7 @@ function NaviApp() {
         const result = await Native.readSurroundings() as {blocks: TextBlock[]};
         if (cancelled) return;
         for (const cue of readingTracker.current.update(Array.isArray(result.blocks) ? result.blocks : [], Date.now())) {
-          setLastReading(cue);
+          setLastReading(cue); readingRef.current = cue;
           const voice = await Native.getOfflineVoiceStatus() as {available: boolean; language: string};
           if (cancelled) return;
           if (!voice.available) setError(`No installed offline voice for ${voice.language}. Visible text is shown on screen.`);
@@ -334,6 +556,8 @@ function NaviApp() {
       <Text style={styles.eyebrow}>{navigating ? 'NEXT INSTRUCTION' : selected ? 'YOUR DESTINATION' : 'START HERE'}</Text>
       <Text style={styles.heroTitle} accessibilityLiveRegion="polite">{heroTitle}</Text>
       <Text style={styles.status} accessibilityLiveRegion="polite">{status}</Text>
+      <Text style={styles.voiceStatus} accessibilityLiveRegion="polite">{voiceStatus}</Text>
+      <Text style={styles.voiceHint}>Say “Hi NAVI,” then “go to Heritage Street Amritsar.” Wake NAVI again to confirm a result and start walking guidance.</Text>
     </View>
 
     {!!error && <View style={styles.errorBox}>
@@ -342,8 +566,9 @@ function NaviApp() {
     </View>}
 
     <View style={styles.primaryActions}>
-      <Button label={listening ? 'Listening…' : 'Speak Guidance  ↗'} onPress={listen}
+      <Button label={listening ? 'Listening…' : 'Speak guidance or command  ↗'} onPress={listen}
         disabled={listening} variant="primary" />
+      {listening && <Button label="End voice session" onPress={endVoiceSessionNow} variant="quiet" />}
       {!assisting && !navigating && <Button label="Start camera assistance" onPress={startAssistance} />}
       {!!steps.length && !navigating && <Button label="Start walking guidance  →" onPress={startNavigation} />}
       {navigating && <Button label="Repeat instruction" onPress={repeat} variant="quiet" />}
@@ -428,11 +653,11 @@ function NaviApp() {
       <View style={styles.toolHalf}><Button label="Repeat turn" onPress={repeat}
         disabled={!lastInstruction} variant="quiet" compact /></View>
     </View>
-    {(assisting || navigating) && <Button label="Stop navigation and camera" onPress={stop} variant="danger" />}
+    {(assisting || navigating) && <Button label="Stop navigation and camera" onPress={() => stop()} variant="danger" />}
 
     <View style={styles.safetyNote}>
       <Text style={styles.safetyTitle}>A note for every walk</Text>
-      <Text style={styles.safetyText}>Use your cane, guide dog and judgment. NAVI cannot confirm safe crossings or clear paths. Camera detection and visible text reading run on your phone; place search and routes need internet. Speak Guidance may use network speech recognition.</Text>
+      <Text style={styles.safetyText}>Use your cane, guide dog and judgment. NAVI cannot confirm safe crossings or clear paths. Voice recognition, camera detection and visible text reading run on your phone. Place search, routes and map tiles need internet.</Text>
     </View>
   </ScrollView>;
 }
@@ -455,6 +680,8 @@ const styles = StyleSheet.create({
   eyebrow: {fontSize: 11, fontWeight: '800', letterSpacing: 2, color: '#2F8175', marginBottom: 9},
   heroTitle: {fontSize: 34, lineHeight: 39, letterSpacing: -1.2, fontWeight: '800', color: '#142528'},
   status: {fontSize: 16, lineHeight: 22, color: '#526460', marginTop: 10},
+  voiceStatus: {fontSize: 11, fontWeight: '800', letterSpacing: 1.1, color: '#2F8175', marginTop: 9},
+  voiceHint: {fontSize: 12, lineHeight: 18, color: '#536966', marginTop: 8},
   errorBox: {backgroundColor: '#FBE8E2', borderLeftWidth: 3, borderLeftColor: '#A64235',
     paddingHorizontal: 14, paddingVertical: 13, marginBottom: 14},
   errorLabel: {fontSize: 10, fontWeight: '800', letterSpacing: 1.7, color: '#8C352B', marginBottom: 5},

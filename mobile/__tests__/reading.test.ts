@@ -39,6 +39,22 @@ it('places route turns ahead of pending readings and can cancel a pending readin
   expect(heard).toHaveLength(2);
 });
 
+it('suppresses camera and text cues during a voice command while preserving a turn and response', async () => {
+  const heard: string[] = [];
+  const done: Array<() => void> = [];
+  const alerts = new AlertManager(text => new Promise<void>(resolve => {
+    heard.push(text); done.push(resolve);
+  }));
+  alerts.enqueue('Current instruction', 4, 'current', 1, 'navigation');
+  alerts.commandListening = true;
+  expect(alerts.enqueue('Routine chair cue', 1, 'chair', 1, 'camera')).toBe(false);
+  expect(alerts.enqueue('Text ahead', 2, 'text', 1, 'reading')).toBe(false);
+  alerts.enqueue("I'm listening", 5, 'wake', 1, 'agent_wake');
+  done.shift()!(); await Promise.resolve();
+  expect(heard).toEqual(['Current instruction', "I'm listening"]);
+  done.shift()!(); await Promise.resolve();
+});
+
 it('announces stable prominent text once and ignores a transient or tiny block', () => {
   const tracker = new AmbientReadingTracker();
   const sign = [{text: 'Heritage Street', x: .4, y: .2, width: .27, height: .06}];
