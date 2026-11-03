@@ -4,9 +4,11 @@ import {AppState, NativeEventEmitter, NativeModules, PermissionsAndroid, Pressab
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {SafeAreaProvider, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {AlertManager} from './src/alerts';
+import {ApproachEstimator} from './src/approach';
 import {CameraView} from './src/CameraView';
 import {RouteMap} from './src/RouteMap';
-import {DetectionStabilizer, type Detection} from './src/detections';
+import {describeScene, SceneTracker, type Detection} from './src/detections';
+import {movementCues, ObjectTracker} from './src/tracking';
 import {parseCommand, formatInstruction, shouldAdvanceStep, distanceMeters, type Point, type RouteStep} from './src/navigation';
 import {searchPlaces, walkingRoute, type Place} from './src/mapsApi';
 
@@ -53,11 +55,17 @@ function NaviApp() {
   const [transcript, setTranscript] = useState('');
   const [lastInstruction, setLastInstruction] = useState('');
   const [latency, setLatency] = useState<number | null>(null);
+  const [fps, setFps] = useState<number | null>(null);
+  const [deliveryMs, setDeliveryMs] = useState<number | null>(null);
   const [lastCue, setLastCue] = useState('');
+  const [sceneSummary, setSceneSummary] = useState('');
+  const [approachNote, setApproachNote] = useState('');
   const stepIndex = useRef(0);
   const approachingStep = useRef(-1);
-  const lastLatencyUi = useRef(0);
-  const stabilizer = useRef(new DetectionStabilizer());
+  const performanceWindow = useRef({since: 0, frames: 0, inferenceTotal: 0, deliveryTotal: 0});
+  const sceneTracker = useRef(new SceneTracker());
+  const objectTracker = useRef(new ObjectTracker());
+  const approachEstimator = useRef(new ApproachEstimator());
   const alerts = useMemo(() => new AlertManager((text) => Native.speak(text)), []);
   alerts.muted = muted || listening; alerts.paused = paused;
 
@@ -74,18 +82,53 @@ function NaviApp() {
     const emitter = new NativeEventEmitter(Native);
     const detections = emitter.addListener('NaviDetections', (event: Object) => {
       const frame = event as Frame;
-      if (Date.now() - lastLatencyUi.current > 5000) {
-        setLatency(frame.latencyMs);
-        lastLatencyUi.current = Date.now();
+      const receivedAt = Date.now();
+      const window = performanceWindow.current;
+      if (!window.since) window.since = receivedAt;
+      window.frames++;
+      window.inferenceTotal += Number.isFinite(frame.latencyMs) ? frame.latencyMs : 0;
+      window.deliveryTotal += Number.isFinite(frame.timestamp) ?
+        Math.max(0, receivedAt - frame.timestamp) : 0;
+      if (receivedAt - window.since >= 5000) {
+        setFps(Math.round(window.frames * 10000 / (receivedAt - window.since)) / 10);
+        setLatency(Math.round(window.inferenceTotal / window.frames));
+        setDeliveryMs(Math.round(window.deliveryTotal / window.frames));
+        performanceWindow.current = {since: receivedAt, frames: 0, inferenceTotal: 0, deliveryTotal: 0};
       }
-      if (!paused) {
-        const cue = stabilizer.current.update(frame.detections);
-        if (cue) { setLastCue(cue); alerts.enqueue(cue, 1, cue); }
+      const tracked = objectTracker.current.update(
+        Array.isArray(frame.detections) ? frame.detections : [],
+        Number.isFinite(frame.timestamp) ? frame.timestamp : Date.now());
+      for (const movement of tracked.movements) {
+        console.info(`NAVI track ${movement.id}: ${movement.label} ${movement.from} to ` +
+          `${movement.to} in camera view`);
+      }
+      const scene = sceneTracker.current.update(tracked.objects.map(object => object.box));
+      const approach = approachEstimator.current.update(tracked);
+      setSceneSummary(describeScene(scene.counts));
+      setApproachNote(approach.observations.some(observation => observation.zone === 'centre' &&
+        observation.state === 'UNKNOWN' && observation.logScaleChange !== null &&
+        Math.abs(observation.logScaleChange) >= 0.18) ?
+        'Apparent distance uncertain' : '');
+      if (!scene.hasStableObjects) setLastCue('');
+      const seen = new Set<string>();
+      let displayed = false;
+      for (const change of [...movementCues(tracked.movements), ...scene.events, ...approach.events]) {
+        if (seen.has(change.key)) continue;
+        seen.add(change.key);
+        const queued = alerts.enqueue(change.text, change.priority, change.key, Date.now(), 'camera');
+        if (queued || !displayed) { setLastCue(change.text); displayed = true; }
       }
     });
     const cameraError = emitter.addListener('NaviCameraError', (event: Object) => {
       setError(`Camera or model unavailable: ${(event as {message: string}).message}`);
       setStatus('Camera unavailable'); cameraReadyRef.current = false; setCameraReady(false); setAssisting(false);
+      setNavigating(false); setSceneSummary(''); setApproachNote(''); setLastCue('');
+      setLatency(null); setFps(null); setDeliveryMs(null);
+      performanceWindow.current = {since: 0, frames: 0, inferenceTotal: 0, deliveryTotal: 0};
+      sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
+      alerts.clear(); Native.stopSpeech();
+      alerts.enqueue('Camera assistance stopped. Check the camera before continuing.',
+        5, 'camera-error', Date.now(), 'system');
     });
     const cameraStarted = emitter.addListener('NaviCameraReady', () => {
       if (cameraReadyRef.current) return;
@@ -95,10 +138,17 @@ function NaviApp() {
       alerts.enqueue('Assistance started. Camera detection is active.', 2, 'assistance-start');
     });
     const appState = AppState.addEventListener('change', state => {
-      if (state === 'background') { cameraReadyRef.current = false; setCameraReady(false); setAssisting(false); setNavigating(false); alerts.clear(); Native.stopSpeech(); }
+      if (state === 'background') {
+        cameraReadyRef.current = false; setCameraReady(false); setAssisting(false); setNavigating(false);
+        setSceneSummary(''); setApproachNote(''); setLastCue('');
+        setLatency(null); setFps(null); setDeliveryMs(null);
+        performanceWindow.current = {since: 0, frames: 0, inferenceTotal: 0, deliveryTotal: 0};
+        sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
+        alerts.clear(); Native.stopSpeech();
+      }
     });
     return () => { detections.remove(); cameraError.remove(); cameraStarted.remove(); appState.remove(); };
-  }, [alerts, paused]);
+  }, [alerts]);
 
   async function request(permission: string): Promise<boolean> {
     return (await PermissionsAndroid.request(permission as any)) === PermissionsAndroid.RESULTS.GRANTED;
@@ -115,16 +165,24 @@ function NaviApp() {
     if (!await request(PermissionsAndroid.PERMISSIONS.CAMERA)) {
       setError('Camera permission denied. Object detection is unavailable.'); return false;
     }
-    cameraReadyRef.current = false; setCameraReady(false); setLatency(null); setLastCue('');
-    setAssisting(true); setPaused(false); setStatus('Starting camera preview…');
+    cameraReadyRef.current = false; setCameraReady(false); setLatency(null); setFps(null);
+    setDeliveryMs(null); setLastCue('');
+    performanceWindow.current = {since: 0, frames: 0, inferenceTotal: 0, deliveryTotal: 0};
+    setSceneSummary(''); setApproachNote('');
+    sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
+    alerts.clearCamera();
+    setAssisting(true); setPaused(false); alerts.paused = false; setStatus('Starting camera preview…');
     void refreshLocation();
     return true;
   }
   function stop() {
-    cameraReadyRef.current = false; setCameraReady(false); setLatency(null);
+    cameraReadyRef.current = false; setCameraReady(false); setLatency(null); setFps(null);
+    setDeliveryMs(null); performanceWindow.current = {since: 0, frames: 0,
+      inferenceTotal: 0, deliveryTotal: 0};
     setAssisting(false); setNavigating(false); setPaused(false); setPoints([]);
     setSteps([]); setPlaces([]); setSelected(null); stepIndex.current = 0; approachingStep.current = -1;
-    setLastInstruction(''); setTranscript(''); setLastCue('');
+    setLastInstruction(''); setTranscript(''); setLastCue(''); setSceneSummary(''); setApproachNote('');
+    sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
     alerts.clear(); Native.stopSpeech(); setStatus('Navigation stopped');
     alerts.enqueue('Navigation stopped.', 2, 'navigation-stop');
   }
@@ -143,7 +201,9 @@ function NaviApp() {
       const command = parseCommand(text);
       if (command.type === 'stop') stop();
       else if (command.type === 'repeat') repeat();
-      else if (command.type === 'pause') { setPaused(true); setStatus('Obstacle alerts paused'); }
+      else if (command.type === 'pause') {
+        alerts.paused = true; alerts.clearCamera(); setPaused(true); setStatus('Obstacle alerts paused');
+      }
       else if (command.type === 'destination') {
         const location = fix || await refreshLocation(); if (!location) return;
         setNavigating(false); setPoints([]); setSteps([]); setSelected(null);
@@ -173,14 +233,17 @@ function NaviApp() {
   }
   const announceStep = useCallback((step: RouteStep) => {
     const instruction = formatInstruction(step.instruction);
-    setLastInstruction(instruction); alerts.enqueue(instruction, 3, `step-${stepIndex.current}`);
+    setLastInstruction(instruction);
+    alerts.enqueue(instruction, 4, `step-${stepIndex.current}`, Date.now(), 'navigation');
   }, [alerts]);
   async function startNavigation() {
     if (!steps.length) { setError('No route steps available.'); return; }
     if (!assisting && !await startAssistance()) return;
     setNavigating(true); setStatus('Navigating and detecting'); announceStep(steps[0]);
   }
-  function repeat() { if (lastInstruction) alerts.enqueue(lastInstruction, 3, `repeat-${Date.now()}`); }
+  function repeat() {
+    if (lastInstruction) alerts.enqueue(lastInstruction, 4, `repeat-${Date.now()}`, Date.now(), 'navigation');
+  }
 
   useEffect(() => {
     if (!navigating) return;
@@ -199,7 +262,7 @@ function NaviApp() {
           if (distance <= 65 && distance > Math.max(18, location.accuracy)) {
             approachingStep.current = nextIndex;
             alerts.enqueue(`In about ${Math.round(distance / 10) * 10} metres, ${formatInstruction(next.instruction)}`,
-              3, `approach-${nextIndex}`);
+              4, `approach-${nextIndex}`, Date.now(), 'navigation');
           }
         } else if (location.accuracy > 35) setStatus('GPS accuracy is poor. Check surroundings.');
       } catch { setStatus('GPS unavailable. Guidance paused until location returns.'); }
@@ -277,7 +340,11 @@ function NaviApp() {
         <Text style={styles.cameraCue} accessibilityLiveRegion="polite">
           {lastCue || (assisting ? 'Looking for people and objects…' : 'Start assistance to hear object cues.')}
         </Text>
-        {latency !== null && <Text style={styles.latency}>{latency} ms inference</Text>}
+        {!!sceneSummary && <Text style={styles.sceneSummary}>IN VIEW · {sceneSummary}</Text>}
+        {!!approachNote && <Text style={styles.approachNote}>{approachNote}</Text>}
+        {latency !== null && <Text style={styles.latency}>
+          {fps} fps · {latency} ms inference · {deliveryMs} ms to app
+        </Text>}
       </View>
     </View>
 
@@ -299,9 +366,16 @@ function NaviApp() {
     </View>
     <View style={styles.toolRow}>
       <View style={styles.toolHalf}><Button label={paused ? 'Resume alerts' : 'Pause alerts'}
-        onPress={() => setPaused(!paused)} variant="quiet" compact /></View>
+        onPress={() => {
+          const next = !paused; alerts.paused = next;
+          if (next) alerts.clearCamera();
+          setPaused(next);
+        }} variant="quiet" compact /></View>
       <View style={styles.toolHalf}><Button label={muted ? 'Unmute voice' : 'Mute voice'}
-        onPress={() => {setMuted(!muted); if (!muted) Native.stopSpeech();}} variant="quiet" compact /></View>
+        onPress={() => {
+          const next = !muted; alerts.muted = next; setMuted(next);
+          if (next) { alerts.clear(); Native.stopSpeech(); }
+        }} variant="quiet" compact /></View>
     </View>
     <View style={styles.toolRow}>
       <View style={styles.toolHalf}><Button label="Refresh GPS" onPress={() => {void refreshLocation();}}
@@ -375,6 +449,9 @@ const styles = StyleSheet.create({
   cameraCaptionInactive: {paddingVertical: 19},
   cameraCaptionLabel: {fontSize: 10, fontWeight: '800', letterSpacing: 1.8, color: '#A3D5C7'},
   cameraCue: {fontSize: 18, lineHeight: 24, fontWeight: '700', color: '#FFFFFF', marginTop: 7},
+  sceneSummary: {fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.4,
+    color: '#A3D5C7', marginTop: 9},
+  approachNote: {fontSize: 12, lineHeight: 18, color: '#D6C8A8', marginTop: 6},
   latency: {fontSize: 12, color: '#B1C6BF', marginTop: 7},
   mapShell: {height: 260, overflow: 'hidden', borderRadius: 14, backgroundColor: '#D8E3DD'},
   mapCaption: {fontSize: 14, lineHeight: 20, color: '#526460', marginTop: 10, marginBottom: 11},

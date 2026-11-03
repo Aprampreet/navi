@@ -9,19 +9,38 @@ NAVI is an assistive walking-route and camera-awareness prototype. It is **not**
 - [x] Local arm64 debug APK built and installed on that phone; NAVI opens
 - [x] CameraX analyzed live frames with on-device ONNX Runtime and detected a chair in the centre (first frame 561 ms; later UI samples 331–392 ms)
 - [x] CameraX preview and native ONNX Runtime inference code with 640 px letterbox, YOLO11 output decoding and class-aware NMS
-- [x] Image-space zones, per-frame counts, two-frame persistence and 5-second alert cooldown
+- [x] Image-space zones, per-class frame counts, three-frame scene smoothing, change-only cues and 5-second per-event cooldown
+- [x] One priority speech queue for camera scene changes and walking instructions; pause, mute, repeat and stop controls
+- [x] Lightweight on-device object tracking with temporary IDs, class-aware box association, motion prediction, short occlusion tolerance and camera-relative zone transitions
+- [x] NAVI 3.0 relative image-scale estimator with timestamped track history, stable-reference and camera-motion gates, cautious approach/recede cues, UNKNOWN fallback and bounded speech queue
 - [x] Android tap-to-talk speech, deterministic destination commands and TTS queue
 - [x] Free open-map proxy, Leaflet map, walking polyline, destination confirmation and basic GPS step progress
 - [x] Heritage Street (Town Hall entrance) confirmation and route line verified on phone; first spoken guidance and camera feed work together
 - [x] TypeScript/unit tests
 - [x] Expo Android JavaScript bundle without local Android tooling
 - [ ] Verify offline camera detection, person counts, and bicycle class accuracy on-device
-- [ ] Measure device FPS, latency, heat, battery and speech responsiveness
+- [x] Verify a person cue and no repeated announcement for the unchanged person scene on the phone
+- [x] Verify chair-left then chair-centre announcements and separate route/camera speech on the phone
+- [x] Verify the new tracked chair-left-to-centre behavior, live feed and map on the phone after the tracking update
+- [x] Verify one cautious "appears to be getting closer" cue with a stationary phone and no false closer cue when the phone moved in a controlled indoor test
+- [ ] Verify a significant count-change cue with multiple supported objects on the phone
+- [x] Record a short phone sample of detection FPS, inference latency, app memory and battery temperature
+- [ ] Measure end-to-end audible cue latency, sustained battery drain and thermal behavior
 - [ ] Test turn timing and off-route behavior on a supervised walk; choose a reachable proxy for use away from USB
 
 ## Current status
 
-The source and a 10 MB YOLO11n ONNX model are present. The project uses Expo development-client tooling with the checked-in Android/Kotlin project. A physical Motorola edge 30 is connected over USB; no emulator or AVD is used. The Android arm64 APK built successfully, installed, and launched. CameraX delivered frames to on-device ONNX Runtime and NAVI displayed live person and chair detections. A preview surface layout fix was installed and verified with a live image and a stop/start cycle. Leaflet map tiles now render in Android's built-in WebView. The user confirmed the Heritage Street entrance result, walking route line, first spoken instruction and concurrent live camera feed on the phone. Turn timing during walking, person counts, bicycle accuracy, and offline operation remain unverified. The app reports a camera/model error if the model is missing. The model is never replaced by simulated detections.
+The source and a 10 MB YOLO11n ONNX model are present. The project uses Expo development-client tooling with the checked-in Android/Kotlin project. A physical Motorola edge 30 is connected over USB; no emulator or AVD is used. The Android arm64 APK built successfully, installed, and launched. CameraX delivered frames to on-device ONNX Runtime and NAVI displayed live person and chair detections. A preview surface layout fix was installed and verified with a live image and a stop/start cycle. Leaflet map tiles now render in Android's built-in WebView. The user confirmed the Heritage Street entrance result, walking route line, first spoken instruction and concurrent live camera feed on the phone. Phase 1 scene tracking now confirms class and zone changes across three frames, speaks only meaningful changes, and gives route instructions priority over camera cues. The user verified that a person cue did not repeat for the unchanged scene, a chair moving from left to centre produced the corresponding two cues, and route speech remained clear and separate from camera speech. Significant count changes remain to be checked on-device. Turn timing during walking, person counts, bicycle accuracy, and offline operation remain unverified. The app reports a camera/model error if the model is missing. The model is never replaced by simulated detections.
+
+The advanced tracking update associates same-class boxes by overlap, size and predicted image position. Confirmed tracks keep temporary IDs through up to two missed frames, and stale tracks expire. A coordinated shift across at least three visible tracks suppresses movement wording; with one object or uncertain camera motion, NAVI announces the new image location instead of claiming that the object moved in the world. This does not estimate physical velocity, approach, distance or collision risk. The update is installed on the Motorola, automated tracking tests pass, and the user confirmed the chair-left-to-centre transition while the live feed and map continued working. Individual track IDs were verified in automated tests, not directly observed in the phone log.
+
+## NAVI 3.0 relative approach evidence
+
+Each confirmed track retains at most six timestamped observations with its box, image centre, area, detector confidence, heuristic association confidence and available image-motion estimate. The estimator compares smoothed early and late box area over at least 1.2 seconds. It requires three consistent scale changes and two other stable tracked objects before saying that a centre-view object **appears** to be getting closer or moving away. A coordinated shift or scale change across the scene, unstable boxes, weak tracking, occlusion, a new ID, or missing reference objects yields `UNKNOWN`. An unchanged box yields `APPARENTLY_STABLE`. These are image observations, not depth measurements or proof of independent object motion.
+
+The Motorola reports accelerometer and gyroscope features, but NAVI does not treat either sensor as a distance sensor. The current implementation uses agreement across tracked objects to suppress camera-wide motion claims; constant camera translation and depth differences can still fool a monocular camera. The user confirmed one cautious closer cue in a controlled stationary-phone test and no false closer cue when moving the phone. The first attempt produced only the ordinary person cue, so the estimator can miss an approach when evidence is insufficient.
+
+Observed short-session phone samples: about 1.8–1.9 analyzed frames per second, 287–291 ms model inference, and about 1 ms from the native detection timestamp to the JavaScript event. Android reported roughly 379–388 MiB app PSS and battery temperature rising from 32°C to 34°C while charging. These are snapshots, not a sustained battery or thermal study. Audible speech onset latency has not been measured.
 
 ## Prerequisites and versions
 
