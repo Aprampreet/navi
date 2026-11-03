@@ -1,0 +1,14 @@
+.DS_Store
+.gradle/
+.android-sdk/
+ai-engine/.venv/
+**/__pycache__/
+mobile/node_modules/
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/build/
+mobile/android/local.properties
+mobile/android/gradle.properties.local
+*.pt
+/yolo11n.onnx
+.env

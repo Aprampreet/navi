@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="leaflet.css">
+<style>html,body,#map{height:100%;width:100%;margin:0;background:#152a33}.leaflet-container{background:#152a33}</style>
+</head><body><div id="map" aria-label="Walking route map"></div>
+<script src="leaflet.js"></script>
+<script>
+  const map = L.map('map', {zoomControl: false}).setView([31.634, 74.8723], 15);
+  window.naviRefresh = function (cssHeight) {
+    document.getElementById('map').style.height = cssHeight + 'px';
+    map.invalidateSize(true);
+  };
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+  let userMarker, destinationMarker, routeLine, routeSignature = '';
+  window.naviUpdate = function (data) {
+    const valid = p => p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude);
+    const latLng = p => [p.latitude, p.longitude];
+    if (valid(data.position)) {
+      if (!userMarker) userMarker = L.circleMarker(latLng(data.position), {
+        radius: 8, color: '#ffffff', weight: 2, fillColor: '#1689e8', fillOpacity: 1
+      }).addTo(map);
+      else userMarker.setLatLng(latLng(data.position));
+    }
+    if (valid(data.destination)) {
+      if (!destinationMarker) destinationMarker = L.circleMarker(latLng(data.destination), {
+        radius: 9, color: '#ffffff', weight: 2, fillColor: '#f05b4f', fillOpacity: 1
+      }).addTo(map);
+      else destinationMarker.setLatLng(latLng(data.destination));
+    } else if (destinationMarker) { map.removeLayer(destinationMarker); destinationMarker = null; }
+    const points = (data.route || []).filter(valid).map(latLng);
+    const signature = points.length ? points.length + ':' + points[0].join(',') + ':' + points[points.length-1].join(',') : '';
+    if (signature !== routeSignature) {
+      routeSignature = signature;
+      if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+      if (points.length > 1) {
+        routeLine = L.polyline(points, {color: '#00d4ff', weight: 6, opacity: 0.95}).addTo(map);
+        map.fitBounds(routeLine.getBounds(), {padding: [24, 24], maxZoom: 17});
+      } else if (valid(data.destination) && valid(data.position)) {
+        map.fitBounds([latLng(data.position), latLng(data.destination)], {padding: [24, 24], maxZoom: 17});
+      } else if (valid(data.position)) map.setView(latLng(data.position), 16);
+    }
+  };
+</script></body></html>
