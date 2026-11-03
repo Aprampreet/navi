@@ -1,4 +1,5 @@
-import {type Point, type RouteStep} from './navigation';
+import {distanceMeters, MAX_WALKING_SEARCH_METERS, nearbyWalkingPlaces,
+  type Point, type RouteStep} from './navigation';
 
 declare const process: {env: {EXPO_PUBLIC_NAVI_PROXY_URL?: string}};
 
@@ -19,11 +20,12 @@ async function post(path: string, payload: object): Promise<any> {
 }
 export async function searchPlaces(query: string, origin: Point): Promise<Place[]> {
   const data = await post('/places', {query, origin});
-  return (data.places || []).filter((p: Place) => Number.isFinite(p.point?.latitude) &&
-    Number.isFinite(p.point?.longitude));
+  return nearbyWalkingPlaces(Array.isArray(data.places) ? data.places : [], origin);
 }
 export async function walkingRoute(origin: Point, destination: Point): Promise<{
   points: Point[]; steps: RouteStep[]}> {
+  if (distanceMeters(origin, destination) > MAX_WALKING_SEARCH_METERS)
+    throw new Error('Destination is too far for a walking route from your current GPS location');
   const data = await post('/route', {origin, destination});
   if (!Array.isArray(data.points) || data.points.length < 2 ||
       !Array.isArray(data.steps) || data.steps.length === 0) throw new Error('No walking route found');

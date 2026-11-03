@@ -51,10 +51,12 @@ class NaviNativeModule(private val context: ReactApplicationContext,
     else audioManager.abandonAudioFocus(focusListener)
   }
   @Volatile private var ttsReady = false
+  @Volatile private var desiredSpeechRate = 1.0f
   @Volatile private var offlineVoice: Voice? = null
   private val tts: TextToSpeech = TextToSpeech(context) { status ->
     ttsReady = status == TextToSpeech.SUCCESS
     if (ttsReady) {
+      tts.setSpeechRate(desiredSpeechRate)
       val language = Locale.getDefault().language
       val selected = tts.voices?.filter { voice ->
         voice.locale.language == language && !voice.isNetworkConnectionRequired &&
@@ -102,6 +104,15 @@ class NaviNativeModule(private val context: ReactApplicationContext,
       putString("language", Locale.getDefault().toLanguageTag())
     })
   }
+  @ReactMethod fun setSpeechRate(rate: Double, promise: Promise) {
+    if (!rate.isFinite() || rate < 0.7 || rate > 1.3) {
+      promise.reject("INVALID_SPEECH_RATE", "Speech rate must be between 0.7 and 1.3")
+      return
+    }
+    desiredSpeechRate = rate.toFloat()
+    if (!ttsReady || tts.setSpeechRate(desiredSpeechRate) == TextToSpeech.SUCCESS) promise.resolve(null)
+    else promise.reject("TTS_RATE_FAILED", "Speech rate could not be changed")
+  }
   @ReactMethod fun speakOffline(text: String, promise: Promise) {
     val voice = offlineVoice
     if (!ttsReady || voice == null) {
@@ -131,6 +142,9 @@ class NaviNativeModule(private val context: ReactApplicationContext,
   @ReactMethod fun startVoiceAgent(promise: Promise) { mainHandler.post { voice.start(promise) } }
   @ReactMethod fun stopVoiceAgent(promise: Promise) { mainHandler.post { voice.stop(promise) } }
   @ReactMethod fun beginVoiceCommand(promise: Promise) { mainHandler.post { voice.beginCommand(promise) } }
+  @ReactMethod fun setVoiceCommandContext(value: String, promise: Promise) {
+    mainHandler.post { voice.setCommandContext(value, promise) }
+  }
   @ReactMethod fun resumeVoiceCommand(promise: Promise) { mainHandler.post { voice.resumeCommand(promise) } }
   @ReactMethod fun finishVoiceCommand(promise: Promise) { mainHandler.post { voice.finishCommand(promise) } }
 

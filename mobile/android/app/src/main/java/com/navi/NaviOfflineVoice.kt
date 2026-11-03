@@ -35,9 +35,38 @@ class NaviOfflineVoice(private val context: ReactApplicationContext) : Recogniti
   private var pendingStart: Promise? = null
   private var restartCount = 0
   private var lastPause: Boolean? = null
+  private var commandContext = "SEARCH"
   private val modelName = "vosk-model-small-en-us-0.15"
   private val wakePattern = Regex("\\b(?:hi|high|hey|hello) (?:navi|navy)\\b")
   private val wakeGrammar = """["hi navy","high navy","hey navy","hello navy","hi navi","hey navi","[unk]"]"""
+  private val commonCommands = listOf("start camera assistance", "stop camera assistance",
+    "describe my surroundings", "read the last text", "repeat", "pause alerts",
+    "resume alerts", "mute", "unmute", "turn on haptics", "turn off haptics",
+    "stop", "cancel")
+  private fun commandGrammar(): String? {
+    val routeCommands = when (commandContext) {
+      "CONFIRM" -> listOf("confirm destination", "confirm first destination",
+        "confirm second destination", "confirm third destination", "confirm fourth destination",
+        "confirm fifth destination", "choose option one", "choose option two",
+        "choose option three", "choose option four", "choose option five", "change destination")
+      "READY" -> listOf("start walking guidance", "start navigation", "route status",
+        "repeat instruction", "refresh my location", "stop navigation", "change destination")
+      "NAVIGATING" -> listOf("repeat instruction", "what is the next turn", "route status",
+        "refresh my location", "pause navigation", "resume navigation",
+        "stop navigation", "change destination")
+      else -> return null // Open vocabulary is needed for spoken place names.
+    }
+    return (commonCommands + routeCommands + "[unk]").joinToString(",", "[", "]") { JSONObject.quote(it) }
+  }
+
+  fun setCommandContext(value: String, promise: Promise) {
+    if (value !in setOf("SEARCH", "CONFIRM", "READY", "NAVIGATING")) {
+      promise.reject("VOICE_CONTEXT_INVALID", "Unknown voice command context")
+      return
+    }
+    commandContext = value
+    promise.resolve(null)
+  }
 
   private fun emit(name: String, text: String = "") {
     context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
@@ -231,9 +260,9 @@ class NaviOfflineVoice(private val context: ReactApplicationContext) : Recogniti
         if (wakePattern.containsMatchIn(text)) {
           mode = Mode.COMMAND
           awaitingAcknowledgement = true
-          // Destination names are open vocabulary, so the command phase uses the bundled
-          // model's unrestricted recognizer. Only the wake phase uses a restricted grammar.
-          try { replaceService(null) }
+          // Search needs open vocabulary. Once results or a route exist, restrict the
+          // next command to relevant choices so short controls are easier to recognize.
+          try { replaceService(commandGrammar()) }
           catch (error: Exception) { emit("NaviVoiceError", error.message ?: "Command listener could not start"); return }
           emit("NaviVoiceWake")
         }
