@@ -9,6 +9,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -20,12 +21,25 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import java.util.Locale
 
-class NaviNativeModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
+class NaviNativeModule(private val context: ReactApplicationContext,
+  private val ocrController: NaviOcrController) : ReactContextBaseJavaModule(context) {
   override fun getName() = "NaviNative"
   private var recognizer: SpeechRecognizer? = null
   private var pendingSpeech: Promise? = null
-  private var ttsReady = false
-  private val tts = TextToSpeech(context) { status -> ttsReady = status == TextToSpeech.SUCCESS }
+  @Volatile private var ttsReady = false
+  @Volatile private var offlineVoice: Voice? = null
+  private val tts: TextToSpeech = TextToSpeech(context) { status ->
+    ttsReady = status == TextToSpeech.SUCCESS
+    if (ttsReady) {
+      val language = Locale.getDefault().language
+      val selected = tts.voices?.filter { voice ->
+        voice.locale.language == language && !voice.isNetworkConnectionRequired &&
+          !voice.features.orEmpty().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)
+      }?.sortedWith(compareByDescending<Voice> { it.locale.country == Locale.getDefault().country }
+        .thenByDescending { it.quality })?.firstOrNull()
+      if (selected != null && tts.setVoice(selected) == TextToSpeech.SUCCESS) offlineVoice = selected
+    }
+  }
   private val utterances = mutableMapOf<String, Promise>()
 
   init {
@@ -46,6 +60,28 @@ class NaviNativeModule(private val context: ReactApplicationContext) : ReactCont
     if (tts.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.ERROR) {
       synchronized(utterances) { utterances.remove(id)?.reject("TTS_ERROR", "Speech failed to start") }
     }
+  }
+  @ReactMethod fun getOfflineVoiceStatus(promise: Promise) {
+    promise.resolve(com.facebook.react.bridge.Arguments.createMap().apply {
+      putBoolean("available", ttsReady && offlineVoice != null)
+      putString("voice", offlineVoice?.name)
+      putString("language", Locale.getDefault().toLanguageTag())
+    })
+  }
+  @ReactMethod fun speakOffline(text: String, promise: Promise) {
+    val voice = offlineVoice
+    if (!ttsReady || voice == null) {
+      promise.reject("OFFLINE_TTS_UNAVAILABLE", "No installed offline voice for the selected language")
+      return
+    }
+    if (tts.setVoice(voice) != TextToSpeech.SUCCESS) {
+      promise.reject("OFFLINE_TTS_UNAVAILABLE", "The installed offline voice could not be selected")
+      return
+    }
+    speak(text, promise)
+  }
+  @ReactMethod fun readSurroundings(promise: Promise) {
+    ocrController.read(promise)
   }
   @ReactMethod fun stopSpeech(promise: Promise) {
     tts.stop()
@@ -113,6 +149,6 @@ class NaviNativeModule(private val context: ReactApplicationContext) : ReactCont
   @ReactMethod fun removeListeners(count: Int) = Unit
 
   override fun invalidate() {
-    recognizer?.destroy(); tts.shutdown(); super.invalidate()
+    recognizer?.destroy(); ocrController.close(); tts.shutdown(); super.invalidate()
   }
 }

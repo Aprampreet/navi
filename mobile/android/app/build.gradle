@@ -55,7 +55,7 @@ react {
     //
     // Added by install-expo-modules
     entryFile = file(["node", "-e", "require('expo/scripts/resolveAppEntry')", rootDir.getAbsoluteFile().getParentFile().getAbsolutePath(), "android", "absolute"].execute(null, rootDir).text.trim())
-    cliFile = new File(["node", "--print", "require.resolve('@expo/cli')"].execute(null, rootDir).text.trim())
+    cliFile = file("../../node_modules/expo/node_modules/@expo/cli/bin/cli.js")
     bundleCommand = "export:embed"
 }
 
@@ -121,6 +121,8 @@ dependencies {
     implementation 'androidx.camera:camera-view:1.4.2'
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.24.3'
     implementation 'com.google.android.gms:play-services-location:21.3.0'
+    // Bundled Latin OCR model: available without Play Services model downloads.
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
@@ -128,3 +130,4 @@ dependencies {
         implementation jscFlavor
     }
 }
+
