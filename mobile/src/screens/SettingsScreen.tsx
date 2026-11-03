@@ -1,13 +1,16 @@
 import React from 'react';
 import {Text, View} from 'react-native';
 import {ActionButton, ScreenFrame, Section, StatusRow, type Appearance, type Theme} from '../ui/design';
+import type {GuardianSensitivity, GuardianState} from '../guardian';
+import {GuardianSettings} from './GuardianSettings';
 
 export type Verbosity = 'focused' | 'all';
 
 export function SettingsScreen({theme, appearance, speechRate, verbosity, hapticsEnabled, highContrast,
   largeText, voiceActivation, voiceState, offlineVoice, cameraPermission,
   microphonePermission, locationPermission, onSpeechRate, onVerbosity, onHaptics,
-  onAppearance, onContrast, onLargeText, onVoiceActivation, onCheckPermissions}: {
+  onAppearance, onContrast, onLargeText, onVoiceActivation, onCheckPermissions,
+  guardian, onGuardianSave, onGuardianTest}: {
   theme: Theme; appearance: Appearance; speechRate: number; verbosity: Verbosity; hapticsEnabled: boolean;
   highContrast: boolean; largeText: boolean; voiceActivation: boolean;
   voiceState: string; offlineVoice: string; cameraPermission: string;
@@ -16,6 +19,10 @@ export function SettingsScreen({theme, appearance, speechRate, verbosity, haptic
   onHaptics: () => void; onAppearance: (value: Appearance) => void;
   onContrast: () => void; onLargeText: () => void;
   onVoiceActivation: () => void; onCheckPermissions: () => void;
+  guardian: GuardianState;
+  onGuardianSave: (name: string, phone: string, confirmation: string,
+    enabled: boolean, sensitivity: GuardianSensitivity, seconds: number) => void;
+  onGuardianTest: () => void;
 }) {
   return <ScreenFrame title="Settings" description="Make NAVI easier to hear, feel, and read."
     theme={theme}>
@@ -79,6 +86,9 @@ export function SettingsScreen({theme, appearance, speechRate, verbosity, haptic
       <ActionButton theme={theme} label="Check permissions and GPS" onPress={onCheckPermissions}
         hint="Refresh permission status and request a GPS fix if location is allowed" />
     </Section>
+
+    <GuardianSettings theme={theme} guardian={guardian} onSave={onGuardianSave}
+      onTest={onGuardianTest} />
 
     <Section title="Privacy and safety" theme={theme}>
       <Text style={{color: theme.secondary, fontSize: 15 * theme.scale,

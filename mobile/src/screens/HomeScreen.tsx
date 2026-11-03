@@ -4,12 +4,13 @@ import {ActionButton, ScreenFrame, Section, StatusRow, type Theme} from '../ui/d
 
 export function HomeScreen({theme, assisting, cameraReady, navigating, voiceState, gpsState,
   offlineVoice, lastAnnouncement, transcript, listening, error, onAssistance, onNavigate, onDescribe,
-  onRepeat, onSettings, onVoice, onEndVoice}: {
+  onRepeat, onSettings, onVoice, onEndVoice, onSOS, guardianReady}: {
   theme: Theme; assisting: boolean; cameraReady: boolean; navigating: boolean;
   voiceState: string; gpsState: string; offlineVoice: string; lastAnnouncement: string;
   transcript: string; listening: boolean;
   error: string; onAssistance: () => void; onNavigate: () => void; onDescribe: () => void;
   onRepeat: () => void; onSettings: () => void; onVoice: () => void; onEndVoice: () => void;
+  onSOS: () => void; guardianReady: boolean;
 }) {
   const state = navigating ? 'Walking guidance active' : cameraReady ? 'Camera assistance active' :
     assisting ? 'Camera starting' : 'Ready when you are';
@@ -48,6 +49,9 @@ export function HomeScreen({theme, assisting, cameraReady, navigating, voiceStat
     </Section>
 
     <Section title="Quick actions" theme={theme}>
+      <ActionButton label="Emergency SOS" hint={guardianReady ?
+        'Start the cancellable emergency SMS countdown' : 'Open Guardian contact setup'}
+        theme={theme} danger onPress={onSOS} />
       <ActionButton label="Navigate" hint="Find and confirm a walking destination" theme={theme}
         onPress={onNavigate} />
       <ActionButton label="Describe surroundings" hint="Speak the current stable camera scene" theme={theme}

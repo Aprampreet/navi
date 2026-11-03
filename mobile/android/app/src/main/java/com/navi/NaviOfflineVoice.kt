@@ -36,23 +36,34 @@ class NaviOfflineVoice(private val context: ReactApplicationContext) : Recogniti
   private var restartCount = 0
   private var lastPause: Boolean? = null
   private var commandContext = "SEARCH"
-  private val modelName = "vosk-model-small-en-us-0.15"
+  private val modelName = "vosk-model-en-us-0.22-lgraph"
   private val wakePattern = Regex("\\b(?:hi|high|hey|hello) (?:navi|navy)\\b")
   private val wakeGrammar = """["hi navy","high navy","hey navy","hello navy","hi navi","hey navi","[unk]"]"""
-  private val commonCommands = listOf("start camera assistance", "stop camera assistance",
-    "describe my surroundings", "read the last text", "repeat", "pause alerts",
-    "resume alerts", "mute", "unmute", "turn on haptics", "turn off haptics",
-    "stop", "cancel")
+  private val commonCommands = listOf("start camera assistance", "please start camera assistance",
+    "start the camera", "turn on camera", "stop camera assistance", "stop the camera",
+    "describe my surroundings", "what do you see", "tell me about my surroundings",
+    "read the last text", "read the last sign", "repeat", "say it again",
+    "pause alerts", "pause the alerts", "resume alerts", "resume the alerts",
+    "mute", "mute voice", "unmute", "unmute voice", "turn on haptics",
+    "turn on vibrations", "turn off haptics", "turn off vibrations",
+    "send sos", "cancel sos", "emergency help", "stop", "cancel")
   private fun commandGrammar(): String? {
     val routeCommands = when (commandContext) {
       "CONFIRM" -> listOf("confirm destination", "confirm first destination",
+        "please confirm first destination", "confirm first destination please",
+        "choose the first place", "pick the first option", "first one", "second one", "third one",
         "confirm second destination", "confirm third destination", "confirm fourth destination",
         "confirm fifth destination", "choose option one", "choose option two",
         "choose option three", "choose option four", "choose option five", "change destination")
-      "READY" -> listOf("start walking guidance", "start navigation", "route status",
-        "repeat instruction", "refresh my location", "stop navigation", "change destination")
-      "NAVIGATING" -> listOf("repeat instruction", "what is the next turn", "route status",
-        "refresh my location", "pause navigation", "resume navigation",
+      "READY" -> listOf("start walking guidance", "please start walking guidance",
+        "start walking guidance please", "start guidance", "begin walking guidance",
+        "start navigation", "route status", "repeat instruction", "repeat the direction",
+        "refresh my location", "stop navigation", "change destination")
+      "NAVIGATING" -> listOf("repeat instruction", "repeat instruction please",
+        "repeat the direction",
+        "what is the next turn", "route status", "refresh my location",
+        "pause navigation", "pause guidance", "please pause navigation",
+        "resume navigation", "resume guidance", "please resume navigation",
         "stop navigation", "change destination")
       else -> return null // Open vocabulary is needed for spoken place names.
     }
@@ -157,6 +168,9 @@ class NaviOfflineVoice(private val context: ReactApplicationContext) : Recogniti
     val loaded = model ?: throw IllegalStateException("Offline model is not ready")
     val fresh = if (grammar == null) Recognizer(loaded, 16000.0f)
       else Recognizer(loaded, 16000.0f, grammar)
+    // Preserve several likely transcripts. The JS intent layer can recover when the
+    // acoustic winner is slightly wrong but another strong alternative is actionable.
+    fresh.setMaxAlternatives(if (mode == Mode.COMMAND) 5 else 3)
     try {
       val next = SpeechService(fresh, 16000.0f)
       recognizer = fresh
@@ -246,18 +260,35 @@ class NaviOfflineVoice(private val context: ReactApplicationContext) : Recogniti
     promise?.resolve(null)
   }
 
-  private fun transcript(json: String): String = try {
+  private fun hypotheses(json: String): List<String> = try {
     val value = JSONObject(json)
-    value.optString("text").ifBlank { value.optString("partial") }.trim()
-  } catch (_: Exception) { "" }
+    val alternatives = value.optJSONArray("alternatives")
+    if (alternatives != null) (0 until alternatives.length()).mapNotNull { index ->
+      alternatives.optJSONObject(index)?.optString("text")?.trim()?.takeIf(String::isNotBlank)
+    }.distinct()
+    else listOf(value.optString("text").ifBlank { value.optString("partial") }.trim())
+      .filter(String::isNotBlank)
+  } catch (_: Exception) { emptyList() }
+
+  private fun emitCommand(values: List<String>) {
+    if (values.isEmpty()) return
+    val alternatives = Arguments.createArray()
+    values.forEach(alternatives::pushString)
+    context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+      .emit("NaviVoiceCommand", Arguments.createMap().apply {
+        putString("text", values.first())
+        putArray("alternatives", alternatives)
+      })
+  }
 
   private fun accept(json: String) {
-    val text = transcript(json).lowercase()
-    if (text.isBlank() || speechActive) return
-    Log.i("NAVI_VOICE", "result mode=$mode wakeMatch=${wakePattern.containsMatchIn(text)} length=${text.length}")
+    val values = hypotheses(json).map(String::lowercase)
+    if (values.isEmpty() || speechActive) return
+    val wakeMatch = values.any(wakePattern::containsMatchIn)
+    Log.i("NAVI_VOICE", "result mode=$mode wakeMatch=$wakeMatch alternatives=${values.size}")
     when (mode) {
       Mode.WAKE -> {
-        if (wakePattern.containsMatchIn(text)) {
+        if (wakeMatch) {
           mode = Mode.COMMAND
           awaitingAcknowledgement = true
           // Search needs open vocabulary. Once results or a route exist, restrict the
@@ -269,7 +300,7 @@ class NaviOfflineVoice(private val context: ReactApplicationContext) : Recogniti
       }
       Mode.COMMAND -> {
         if (awaitingAcknowledgement) return
-        if (wakePattern.containsMatchIn(text)) {
+        if (wakeMatch) {
           clearTimeout()
           awaitingAcknowledgement = true
           service?.reset()
@@ -280,7 +311,7 @@ class NaviOfflineVoice(private val context: ReactApplicationContext) : Recogniti
         mode = Mode.PROCESSING
         clearTimeout()
         applyPause()
-        emit("NaviVoiceCommand", text)
+        emitCommand(values)
       }
       else -> Unit
     }

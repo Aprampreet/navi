@@ -1,6 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {AccessibilityInfo, AppState, NativeEventEmitter, NativeModules, PermissionsAndroid, StatusBar, Vibration,
-  View, useWindowDimensions, type ViewStyle} from 'react-native';
+import {AccessibilityInfo, AppState, Modal, NativeEventEmitter, NativeModules, PermissionsAndroid, StatusBar, Vibration,
+  Text, View, useWindowDimensions, type ViewStyle} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {SafeAreaProvider, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {AlertManager} from './src/alerts';
@@ -12,13 +12,19 @@ import {searchPlaces, walkingRoute, type Place} from './src/mapsApi';
 import {AmbientReadingTracker, type TextBlock} from './src/reading';
 import {destinationChoice, extractDestination, VoiceAgentController} from './src/voiceAgent';
 import {cameraZoneForEvent, HapticManager} from './src/haptics';
+import {CorridorTracker, parseCorridorFrame, type CorridorFrame} from './src/corridor';
 import {BottomTabs, createTheme, type Appearance, type ScreenName} from './src/ui/design';
 import {HomeScreen} from './src/screens/HomeScreen';
 import {AssistanceScreen} from './src/screens/AssistanceScreen';
 import {NavigationScreen} from './src/screens/NavigationScreen';
 import {SettingsScreen, type Verbosity} from './src/screens/SettingsScreen';
+import {GuardianCoordinator, initialGuardian, type GuardianSensitivity,
+  type GuardianState, type GuardianTransport} from './src/guardian';
+import {ActionButton} from './src/ui/design';
 
 const Native = NativeModules.NaviNative;
+const Guardian = NativeModules.NaviGuardian;
+const guardianCoordinator = new GuardianCoordinator(Guardian as GuardianTransport);
 type Fix = Point & {accuracy: number};
 type Frame = {detections: Detection[]; timestamp: number; latencyMs: number};
 
@@ -26,6 +32,8 @@ function NaviApp() {
   const insets = useSafeAreaInsets();
   const {width: screenWidth, height: screenHeight} = useWindowDimensions();
   const [screen, setScreen] = useState<ScreenName>('home');
+  const [guardian, setGuardian] = useState<GuardianState>(initialGuardian);
+  const guardianPrevious = useRef({phase: 'IDLE', remaining: 0});
   const [appearance, setAppearance] = useState<Appearance>('dark');
   const [highContrast, setHighContrast] = useState(false);
   const [largeText, setLargeText] = useState(false);
@@ -71,6 +79,8 @@ function NaviApp() {
   const [sceneSummary, setSceneSummary] = useState('');
   const [approachNote, setApproachNote] = useState('');
   const [lastReading, setLastReading] = useState('');
+  const [corridor, setCorridor] = useState<CorridorFrame | null>(null);
+  const [corridorError, setCorridorError] = useState('');
   const sceneRef = useRef({text: '', at: 0});
   const readingRef = useRef('');
   const instructionRef = useRef('');
@@ -78,7 +88,7 @@ function NaviApp() {
   const directVoiceInput = useRef(false);
   const endVoiceSession = useRef(false);
   const voiceAgent = useRef(new VoiceAgentController());
-  const commandHandler = useRef<(text: string) => Promise<void>>(async () => {});
+  const commandHandler = useRef<(text: string, alternatives?: string[]) => Promise<void>>(async () => {});
   const readingTracker = useRef(new AmbientReadingTracker());
   const readingInFlight = useRef(false);
   const stepIndex = useRef(0);
@@ -87,13 +97,14 @@ function NaviApp() {
   const sceneTracker = useRef(new SceneTracker());
   const objectTracker = useRef(new ObjectTracker());
   const approachEstimator = useRef(new ApproachEstimator());
+  const corridorTracker = useRef(new CorridorTracker());
   const haptics = useMemo(() => new HapticManager(pattern => Vibration.vibrate(pattern),
     () => Vibration.cancel()), []);
   const theme = useMemo(() => createTheme(highContrast, largeText, appearance),
     [highContrast, largeText, appearance]);
   const alerts = useMemo(() => new AlertManager(async (text, source) => {
     if (source !== 'agent_wake') setLastAnnouncement(text);
-    if (source === 'reading' || source === 'agent' || source === 'agent_wake' || source === 'ui')
+    if (source === 'reading' || source === 'agent' || source === 'agent_wake' || source === 'ui' || source === 'guardian')
       await Native.speakOffline(text);
     else await Native.speak(text);
     if (source === 'agent_wake' && !endVoiceSession.current) await Native.resumeVoiceCommand();
@@ -186,6 +197,33 @@ function NaviApp() {
   }, []);
 
   useEffect(() => {
+    guardianCoordinator.state().then((value: GuardianState) => setGuardian(value)).catch(() => {});
+    const emitter = new NativeEventEmitter(Guardian);
+    const subscription = emitter.addListener('NaviGuardianState', (value: Object) =>
+      setGuardian(value as GuardianState));
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    const before = guardianPrevious.current;
+    if (guardian.phase === 'COUNTDOWN' && before.phase !== 'COUNTDOWN') {
+      alerts.clear(); Native.stopSpeech().catch(() => {});
+      if (!listening) alerts.enqueue(`Emergency SOS activated. Sending an alert in ${guardian.remaining} seconds. ` +
+        'Say Hi NAVI, then cancel SOS, or use the Cancel SOS control.', 5,
+      `guardian-start-${Date.now()}`, Date.now(), 'guardian');
+    } else if (guardian.phase === 'COUNTDOWN' && before.remaining !== guardian.remaining &&
+      [5, 2].includes(guardian.remaining) && !listening) {
+      alerts.enqueue(`${guardian.remaining} seconds to cancel SOS.`, 5,
+        `guardian-tick-${guardian.remaining}`, Date.now(), 'guardian');
+    } else if (guardian.phase !== before.phase &&
+      ['CANCELLED', 'FAILED', 'COMPOSER', 'SENT', 'DELIVERED', 'UNCERTAIN'].includes(guardian.phase) &&
+      !listening) {
+      alerts.enqueue(guardian.detail, 5, `guardian-status-${Date.now()}`, Date.now(), 'guardian');
+    }
+    guardianPrevious.current = {phase: guardian.phase, remaining: guardian.remaining};
+  }, [guardian, listening, alerts]);
+
+  useEffect(() => {
     const context = navigating ? 'NAVIGATING' : steps.length ? 'READY' :
       places.length ? 'CONFIRM' : 'SEARCH';
     Native.setVoiceCommandContext(context).catch(() => {});
@@ -245,6 +283,29 @@ function NaviApp() {
         if (apparentApproach) haptics.approach(apparentApproach.key, receivedAt);
       }
     });
+    const corridorUpdate = emitter.addListener('NaviCorridor', (event: Object) => {
+      const parsed = parseCorridorFrame(event);
+      if (!parsed) {
+        setCorridorError('The on-device model returned an invalid result.');
+        return;
+      }
+      setCorridorError('');
+      const update = corridorTracker.current.update(parsed,
+        Number.isFinite(parsed.timestamp) ? parsed.timestamp : Date.now());
+      if (!update) return;
+      setCorridor(update.frame);
+      // Existing YOLO scene events already announce people. Keep that cue in
+      // the shared priority queue once, rather than speaking a duplicate from
+      // the corridor model.
+      if (update.announcement && update.announcement !== 'People detected ahead.')
+        alerts.enqueue(update.announcement, 1, `corridor:${update.announcement}`,
+          Date.now(), 'camera');
+    });
+    const corridorFailure = emitter.addListener('NaviCorridorError', (event: Object) => {
+      setCorridorError((event as {message?: string}).message || 'Walking-surface model unavailable.');
+      setCorridor(null);
+      corridorTracker.current.reset();
+    });
     const cameraError = emitter.addListener('NaviCameraError', (event: Object) => {
       setError(`Camera or model unavailable: ${(event as {message: string}).message}`);
       sceneRef.current = {text: '', at: 0}; readingRef.current = '';
@@ -254,6 +315,7 @@ function NaviApp() {
       setLatency(null); setFps(null); setDeliveryMs(null);
       performanceWindow.current = {since: 0, frames: 0, inferenceTotal: 0, deliveryTotal: 0};
       sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
+      corridorTracker.current.reset(); setCorridor(null); setCorridorError('');
       alerts.clear(); haptics.reset(); Native.stopSpeech();
       haptics.error('camera');
       alerts.enqueue('Camera assistance stopped. Check the camera before continuing.',
@@ -276,6 +338,7 @@ function NaviApp() {
         setLatency(null); setFps(null); setDeliveryMs(null);
         performanceWindow.current = {since: 0, frames: 0, inferenceTotal: 0, deliveryTotal: 0};
         sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
+        corridorTracker.current.reset(); setCorridor(null); setCorridorError('');
         readingTracker.current.reset(); setLastReading('');
         sceneRef.current = {text: '', at: 0}; readingRef.current = '';
         alerts.clear(); haptics.reset(); Native.stopSpeech();
@@ -286,7 +349,8 @@ function NaviApp() {
           .then(granted => { if (granted) Native.startVoiceAgent().catch(() => {}); });
       }
     });
-    return () => { detections.remove(); cameraError.remove(); cameraStarted.remove(); appState.remove(); };
+    return () => { detections.remove(); corridorUpdate.remove(); corridorFailure.remove();
+      cameraError.remove(); cameraStarted.remove(); appState.remove(); };
   }, [alerts, haptics]);
 
   useEffect(() => {
@@ -309,7 +373,8 @@ function NaviApp() {
     });
     const command = emitter.addListener('NaviVoiceCommand', (event: Object) => {
       haptics.voice('heard');
-      commandHandler.current((event as {text: string}).text).catch(cause => {
+      const result = event as {text: string; alternatives?: string[]};
+      commandHandler.current(result.text, result.alternatives).catch(cause => {
         setError(`Voice command failed: ${String(cause)}`);
         Native.finishVoiceCommand().catch(() => {});
         setListening(false);
@@ -387,6 +452,7 @@ function NaviApp() {
     setDeliveryMs(null); setLastCue('');
     performanceWindow.current = {since: 0, frames: 0, inferenceTotal: 0, deliveryTotal: 0};
     setSceneSummary(''); setApproachNote('');
+    corridorTracker.current.reset(); setCorridor(null); setCorridorError('');
     readingTracker.current.reset(); setLastReading('');
     sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
     haptics.reset();
@@ -406,6 +472,7 @@ function NaviApp() {
     setSteps([]); setPlaces([]); setSelected(null); stepIndex.current = 0; approachingStep.current = -1;
     setLastInstruction(''); setTranscript(''); setLastCue(''); setSceneSummary(''); setApproachNote('');
     sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
+    corridorTracker.current.reset(); setCorridor(null); setCorridorError('');
     haptics.reset();
     alerts.clear(); Native.stopSpeech(); setStatus('Navigation stopped');
     if (announce) alerts.enqueue('Navigation stopped.', 2, 'navigation-stop');
@@ -416,6 +483,7 @@ function NaviApp() {
     readingTracker.current.reset(); sceneRef.current = {text: '', at: 0}; readingRef.current = '';
     haptics.reset();
     setSceneSummary(''); setApproachNote(''); setLastCue(''); setLastReading('');
+    corridorTracker.current.reset(); setCorridor(null); setCorridorError('');
     alerts.clearCamera(); alerts.clearReading();
     setStatus(navigating ? 'Camera stopped. Walking guidance continues.' : 'Camera assistance stopped.');
   }
@@ -527,9 +595,13 @@ function NaviApp() {
     if (!next && repeatOnResume && instructionRef.current) repeat();
   }
 
-  async function handleVoiceCommand(text: string) {
+  async function handleVoiceCommand(text: string, alternatives: string[] = []) {
+    const voiceContext = navigating ? 'NAVIGATING' : steps.length ? 'READY' :
+      places.length ? 'CONFIRM' : 'SEARCH';
+    const decision = voiceAgent.current.commandCandidates([text, ...alternatives], voiceContext);
+    text = decision.text || text;
+    const intent = decision.intent;
     setTranscript(text);
-    const intent = voiceAgent.current.command(text);
     endVoiceSession.current = false;
     let response = '';
     try {
@@ -637,13 +709,26 @@ function NaviApp() {
         case 'haptics_off':
           haptics.enabled = false; haptics.reset(); setHapticsEnabled(false);
           response = 'Haptics off.'; break;
+        case 'send_sos':
+          try {
+            const state = await guardianCoordinator.start();
+            response = `Emergency SOS activated. Sending in ${state.remaining} seconds. ` +
+              'Say Hi NAVI, then cancel SOS, or tap Cancel SOS.';
+          } catch { response = 'SOS could not start. Set and confirm a Guardian contact in Settings.'; }
+          break;
+        case 'cancel_sos':
+          try { await guardianCoordinator.cancel(); response = 'SOS cancelled. No message was sent.'; }
+          catch { response = 'There is no active SOS countdown to cancel.'; }
+          break;
         case 'stop': stop(false); response = 'Navigation and camera stopped.'; break;
         case 'cancel': response = 'Cancelled.'; break;
         default: {
           const oldCommand = parseCommand(text);
           if (directVoiceInput.current && oldCommand.type === 'destination')
             response = await searchDestination(oldCommand.destination);
-          else response = 'I did not understand. Try go to a destination, start walking guidance, or describe my surroundings.';
+          else response = decision.ambiguous ?
+            'I heard more than one possible command. Please say Hi NAVI and try again with the action and feature, for example start camera.' :
+            'I did not understand. Try go to a destination, start walking guidance, or describe my surroundings.';
         }
       }
     } catch (cause) {
@@ -776,6 +861,35 @@ function NaviApp() {
       setOfflineVoice(value.available ? 'Installed' : 'Unavailable')).catch(() =>
       setOfflineVoice('Unavailable'));
   }
+  async function saveGuardian(name: string, phone: string, confirmation: string,
+    enabled: boolean, sensitivity: GuardianSensitivity, seconds: number) {
+    try {
+      const state = await guardianCoordinator.save(name, phone, confirmation, enabled,
+        sensitivity, seconds);
+      setGuardian(state);
+      if (enabled && !state.smsPermission) {
+        await PermissionsAndroid.request('android.permission.SEND_SMS' as any);
+        setGuardian(await guardianCoordinator.state());
+      }
+    } catch (cause) { setGuardian(previous => ({...previous,
+      detail: `Guardian settings not saved: ${String(cause)}`})); }
+  }
+  function startGuardian() {
+    if (!guardian.phone) {
+      setGuardian(previous => ({...previous, detail: 'Enter and confirm an emergency contact first.'}));
+      changeScreen('settings'); return;
+    }
+    guardianCoordinator.start().catch((cause: unknown) => setGuardian(previous => ({...previous,
+      detail: `SOS could not start: ${String(cause)}`})));
+  }
+  function cancelGuardian() {
+    guardianCoordinator.cancel().catch((cause: unknown) => setGuardian(previous => ({...previous,
+      detail: `SOS could not be cancelled: ${String(cause)}`})));
+  }
+  function testGuardian() {
+    guardianCoordinator.testDraft().catch((cause: unknown) => setGuardian(previous => ({...previous,
+      detail: `Test SMS draft unavailable: ${String(cause)}`})));
+  }
   function openAssistance() {
     if (assisting) { changeScreen('assistance'); return; }
     startAssistance().then(started => { if (started) changeScreen('assistance'); });
@@ -786,15 +900,14 @@ function NaviApp() {
       height: Math.max(screenHeight, 800), opacity: 0};
 
   return <View style={{flex: 1, backgroundColor: theme.background, paddingTop: insets.top}}>
-    <StatusBar barStyle={appearance === 'light' && !highContrast ? 'dark-content' : 'light-content'}
-      backgroundColor={theme.background} />
+    <StatusBar barStyle={appearance === 'light' && !highContrast ? 'dark-content' : 'light-content'} />
     {screen === 'home' && <HomeScreen theme={theme} assisting={assisting} cameraReady={cameraReady}
       navigating={navigating} voiceState={voiceState} gpsState={gpsState} offlineVoice={offlineVoice}
       lastAnnouncement={lastAnnouncement} transcript={transcript} listening={listening}
       error={error} onAssistance={openAssistance}
       onNavigate={() => changeScreen('navigation')} onDescribe={describeNow}
       onRepeat={repeatLastNow} onSettings={() => changeScreen('settings')} onVoice={listen}
-      onEndVoice={endVoiceSessionNow} />}
+      onEndVoice={endVoiceSessionNow} onSOS={startGuardian} guardianReady={!!guardian.phone} />}
     {screen === 'navigation' && <NavigationScreen theme={theme} destination={selected}
       places={places} position={fix} route={points} stepCount={steps.length}
       currentStep={currentStep} instruction={lastInstruction} navigating={navigating}
@@ -814,7 +927,9 @@ function NaviApp() {
       onContrast={() => setHighContrast(!highContrast)}
       onLargeText={() => setLargeText(!largeText)}
       onVoiceActivation={() => {void toggleWake();}}
-      onCheckPermissions={() => {void checkSettingsPermissions();}} />}
+      onCheckPermissions={() => {void checkSettingsPermissions();}}
+      guardian={guardian} onGuardianSave={(...args) => {void saveGuardian(...args);}}
+      onGuardianTest={testGuardian} />}
     <View style={hiddenAssistance} pointerEvents={screen === 'assistance' ? 'auto' : 'none'}
       importantForAccessibility={screen === 'assistance' ? 'auto' : 'no-hide-descendants'}
       accessibilityElementsHidden={screen !== 'assistance'}>
@@ -822,6 +937,7 @@ function NaviApp() {
         paused={paused} lastCue={lastCue} lastReading={lastReading}
         sceneSummary={sceneSummary} approachNote={approachNote} fps={fps}
         latency={latency} deliveryMs={deliveryMs} error={error} listening={listening}
+        corridor={corridor} corridorError={corridorError}
         onStart={() => {void startAssistance();}} onPause={toggleCameraAlerts}
         onStop={stopCameraOnly} onRepeat={repeatLastNow} onDescribe={describeNow}
         onVoice={listen} onEndVoice={endVoiceSessionNow} />
@@ -829,6 +945,22 @@ function NaviApp() {
     <View style={{paddingBottom: insets.bottom, backgroundColor: theme.surface}}>
       <BottomTabs active={screen} onChange={changeScreen} theme={theme} />
     </View>
+    <Modal visible={guardian.phase === 'COUNTDOWN'} animationType="fade"
+      onRequestClose={cancelGuardian} statusBarTranslucent>
+      <View style={{flex: 1, backgroundColor: theme.danger, padding: 28,
+        justifyContent: 'center', gap: 22}}>
+        <Text accessibilityRole="header" style={{color: theme.background, fontWeight: '900',
+          fontSize: 38 * theme.scale, lineHeight: 46 * theme.scale}}>
+          Emergency SOS</Text>
+        <Text style={{color: theme.background, fontWeight: '900', fontSize: 30 * theme.scale}}>
+          Sending in {guardian.remaining} seconds</Text>
+        <Text style={{color: theme.background, fontSize: 18 * theme.scale,
+          lineHeight: 27 * theme.scale}}>
+          An emergency message to {guardian.name} will be attempted unless you cancel.</Text>
+        <ActionButton label="Cancel SOS" theme={theme} onPress={cancelGuardian}
+          hint="Cancel the emergency alert before sending" />
+      </View>
+    </Modal>
   </View>;
 }
 

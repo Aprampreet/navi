@@ -117,7 +117,8 @@ export class ApproachEstimator {
         previous.stable = observation.state;
         if (observation.zone === 'centre' && observation.state === 'POSSIBLY_APPROACHING') {
           events.push({key: `approach:${observation.id}`, priority: 2,
-            text: `${capitalize(observation.label)} appears to be getting closer`});
+            text: `${capitalize(observation.label)} appears to be getting closer in the centre. ` +
+              'Pause and check your surroundings'});
         } else if (observation.zone === 'centre' && observation.state === 'POSSIBLY_RECEDING') {
           events.push({key: `recede:${observation.id}`, priority: 1,
             text: `${capitalize(observation.label)} appears to be moving away`});

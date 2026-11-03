@@ -41,8 +41,8 @@ export function movementCues(movements: TrackMovement[]): SceneEvent[] {
       text = `${n === 1 ? `A ${label}` : `${count} ${label}`} ${n === 1 ? 'is' : 'are'} ` +
         `moving from ${first.from} toward ${first.to} in the camera view`;
     } else if (first.to === 'centre') {
-      text = n === 1 ? `${label[0].toUpperCase()}${label.slice(1)} detected in the centre` :
-        `${count} ${label} now in the centre`;
+      text = `${n === 1 ? `${label[0].toUpperCase()}${label.slice(1)}` : `${count} ${label}`} ` +
+        'in the centre of the camera view. Pause and scan left and right';
     } else {
       text = n === 1 ? `${label[0].toUpperCase()}${label.slice(1)} now visible ${place}` :
         `${count} ${label} now visible ${place}`;

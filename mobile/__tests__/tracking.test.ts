@@ -14,7 +14,8 @@ test('keeps one ID as a person crosses from left to centre', () => {
   expect(updates[6].movements).toEqual([{
     id: 1, label: 'person', from: 'left', to: 'centre', direction: 'right', relativeMotion: false,
   }]);
-  expect(movementCues(updates[6].movements)[0].text).toBe('Person detected in the centre');
+  expect(movementCues(updates[6].movements)[0].text)
+    .toBe('Person in the centre of the camera view. Pause and scan left and right');
   expect(updates[6].objects[0].history.length).toBeLessThanOrEqual(6);
 });
 
@@ -33,7 +34,8 @@ test('preserves one chair identity and speaks left then centre only once', async
     if (tracked.objects.length) expect(tracked.objects[0].id).toBe(1);
   }
   await Promise.resolve();
-  expect(spoken).toEqual(['Chair detected on the left', 'Chair detected in the centre']);
+  expect(spoken).toEqual(['Chair detected on the left',
+    'Chair in the centre of the camera view. Pause and scan left and right']);
 });
 
 test('counts distinct people and preserves IDs through two missing frames', () => {

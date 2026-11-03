@@ -8,7 +8,7 @@ import com.facebook.react.uimanager.ViewManager
 class NaviPackage : ReactPackage {
   private val ocrController = NaviOcrController()
   override fun createNativeModules(context: ReactApplicationContext): List<NativeModule> =
-    listOf(NaviNativeModule(context, ocrController))
+    listOf(NaviNativeModule(context, ocrController), NaviGuardianModule(context))
 
   override fun createViewManagers(context: ReactApplicationContext): List<ViewManager<*, *>> =
     listOf(NaviCameraViewManager(context, ocrController), NaviMapViewManager(context))

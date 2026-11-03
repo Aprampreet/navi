@@ -37,7 +37,9 @@ test('stationary object and camera produce apparently stable image scale', () =>
 test('one object expanding relative to stable references yields one cautious approach cue', () => {
   const result = run([1, 1.05, 1.12, 1.18, 1.26, 1.34, 1.42, 1.5, 1.55]);
   expect(result.states).toContain('POSSIBLY_APPROACHING');
-  expect(result.spoken).toEqual(['Person appears to be getting closer']);
+  expect(result.spoken).toEqual([
+    'Person appears to be getting closer in the centre. Pause and check your surroundings',
+  ]);
 });
 
 test('camera moving toward stationary objects remains unknown', () => {

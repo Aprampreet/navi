@@ -36,7 +36,9 @@ test('confirms a new scene over three frames and stays quiet while it is unchang
   expect(tracker.update(people).events).toEqual([]);
   expect(tracker.update(people).events).toEqual([]);
   expect(tracker.update(people).events).toEqual([
-    {key: 'scene:person:appear', text: 'Three people visible ahead', priority: 1},
+    {key: 'scene:person:appear',
+      text: 'Three people visible. One person in the centre of the camera view. Pause and scan left and right',
+      priority: 3},
   ]);
   for (let i = 0; i < 15; i++) expect(tracker.update(people).events).toEqual([]);
   expect(tracker.update([box(0.45, 'chair')]).events).toEqual([]);
@@ -48,7 +50,8 @@ test('announces a supported object entering the centre after stable left detecti
   expect(tracker.update([box(0.45, 'chair')]).events).toEqual([]);
   expect(tracker.update([box(0.45, 'chair')]).events).toEqual([]);
   expect(tracker.update([box(0.45, 'chair')]).events).toEqual([
-    {key: 'scene:chair:centre', text: 'Chair detected in the centre', priority: 3},
+    {key: 'scene:chair:centre',
+      text: 'Chair in the centre of the camera view. Pause and scan left and right', priority: 3},
   ]);
   expect(tracker.update([box(0.45, 'chair')]).events).toEqual([]);
 });

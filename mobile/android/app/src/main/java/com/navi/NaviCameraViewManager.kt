@@ -17,6 +17,7 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.uimanager.SimpleViewManager
 import com.facebook.react.uimanager.annotations.ReactProp
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class NaviCameraViewManager(private val context: ReactApplicationContext,
   private val ocrController: NaviOcrController) : SimpleViewManager<PreviewView>() {
@@ -27,12 +28,16 @@ class NaviCameraViewManager(private val context: ReactApplicationContext,
     fun stop() { registry.currentState = Lifecycle.State.DESTROYED }
   }
   private val executor = Executors.newSingleThreadExecutor()
+  private val segmentationExecutor = Executors.newSingleThreadExecutor()
   private var provider: ProcessCameraProvider? = null
   private var detector: NaviDetector? = null
+  @Volatile private var segmenter: NaviSegmenter? = null
   private var lifecycleOwner: CameraLifecycleOwner? = null
   private var activeView: PreviewView? = null
   private var cameraGeneration = 0
   private var lastFrame = 0L
+  private var lastSegmentationFrame = 0L
+  private val segmentationInFlight = AtomicBoolean(false)
   private var loggedFirstFrame = false
   override fun getName() = "NaviCameraView"
   override fun createViewInstance(reactContext: com.facebook.react.uimanager.ThemedReactContext): PreviewView =
@@ -53,6 +58,10 @@ class NaviCameraViewManager(private val context: ReactApplicationContext,
     val oldDetector = detector
     detector = null
     if (oldDetector != null) executor.execute { oldDetector.close() }
+    val oldSegmenter = segmenter
+    segmenter = null
+    if (oldSegmenter != null) segmentationExecutor.execute { oldSegmenter.close() }
+    segmentationInFlight.set(false)
   }
 
   @ReactProp(name = "active", defaultBoolean = false)
@@ -65,11 +74,26 @@ class NaviCameraViewManager(private val context: ReactApplicationContext,
     activeView = view
     val generation = ++cameraGeneration
     loggedFirstFrame = false
+    lastFrame = 0L
+    lastSegmentationFrame = 0L
     val future = ProcessCameraProvider.getInstance(context)
     future.addListener({
       if (lifecycleOwner !== owner || activeView !== view) return@addListener
       try {
         detector = NaviDetector(context)
+        segmentationExecutor.execute {
+          try {
+            val candidate = NaviSegmenter(context)
+            if (cameraGeneration == generation && activeView === view) {
+              segmenter = candidate
+              Log.i("NAVI", "Offline SegFormer corridor model ready")
+            } else candidate.close()
+          } catch (error: Exception) {
+            Log.e("NAVI", "Segmentation model unavailable", error)
+            if (cameraGeneration == generation) emitCorridorError(
+              error.message ?: "Walking-surface model unavailable")
+          }
+        }
         provider = future.get()
         view.previewStreamState.observe(owner) { state ->
           if (cameraGeneration == generation && activeView === view &&
@@ -127,6 +151,26 @@ class NaviCameraViewManager(private val context: ReactApplicationContext,
               event.putDouble("latencyMs", latency.toDouble())
               context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
                 .emit("NaviDetections", event)
+              val currentSegmenter = segmenter
+              if (currentSegmenter != null && now - lastSegmentationFrame >= 3000 &&
+                segmentationInFlight.compareAndSet(false, true)) {
+                lastSegmentationFrame = now
+                val bitmap = NaviSegmenter.copyRotatedBitmap(frame)
+                val boxSnapshot = boxes.toList()
+                segmentationExecutor.execute {
+                  try {
+                    val result = currentSegmenter.analyze(bitmap, boxSnapshot)
+                    if (cameraGeneration == generation) emitCorridor(result)
+                  } catch (error: Exception) {
+                    Log.e("NAVI", "Corridor analysis failed", error)
+                    if (cameraGeneration == generation) emitCorridorError(
+                      error.message ?: "Walking-surface analysis failed")
+                  } finally {
+                    bitmap.recycle()
+                    segmentationInFlight.set(false)
+                  }
+                }
+              }
             }
           } catch (error: Exception) {
             Log.e("NAVI", "Analyzer failed", error)
@@ -137,11 +181,11 @@ class NaviCameraViewManager(private val context: ReactApplicationContext,
         provider?.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis, capture)
         ocrController.attach(capture, executor)
         Log.i("NAVI", "CameraX bound; attempt=$attempt size=${view.width}x${view.height}")
-        // Fabric sets the native view's bounds without always measuring its
-        // children. PreviewView creates its SurfaceView after bind, so lay it
-        // out once the surface child has been added.
-        view.postDelayed({ layoutPreviewChildren(view, generation) }, 100)
-        view.postDelayed({ layoutPreviewChildren(view, generation) }, 500)
+        // Fabric supplies PreviewView's bounds before CameraX creates its
+        // TextureView. Relayout PreviewView itself after that child exists so
+        // CameraX recomputes its crop and rotation from the real native bounds.
+        view.postDelayed({ refreshPreviewLayout(view, generation) }, 100)
+        view.postDelayed({ refreshPreviewLayout(view, generation) }, 500)
         view.postDelayed({
           if (cameraGeneration != generation || activeView !== view) return@postDelayed
           if (view.previewStreamState.value == PreviewView.StreamState.STREAMING) {
@@ -155,19 +199,21 @@ class NaviCameraViewManager(private val context: ReactApplicationContext,
     }
   }
 
-  private fun layoutPreviewChildren(view: PreviewView, generation: Int) {
+  private fun refreshPreviewLayout(view: PreviewView, generation: Int) {
     if (cameraGeneration != generation || activeView !== view || !view.isAttachedToWindow) return
     val width = view.width
     val height = view.height
     if (width <= 0 || height <= 0) return
-    val widthSpec = android.view.View.MeasureSpec.makeMeasureSpec(width, android.view.View.MeasureSpec.EXACTLY)
-    val heightSpec = android.view.View.MeasureSpec.makeMeasureSpec(height, android.view.View.MeasureSpec.EXACTLY)
-    for (index in 0 until view.childCount) {
-      val child = view.getChildAt(index)
-      child.measure(widthSpec, heightSpec)
-      child.layout(0, 0, width, height)
-    }
-    Log.i("NAVI", "Preview children laid out: ${view.childCount}")
+    val widthSpec = android.view.View.MeasureSpec.makeMeasureSpec(width,
+      android.view.View.MeasureSpec.EXACTLY)
+    val heightSpec = android.view.View.MeasureSpec.makeMeasureSpec(height,
+      android.view.View.MeasureSpec.EXACTLY)
+    view.measure(widthSpec, heightSpec)
+    view.forceLayout()
+    view.layout(view.left, view.top, view.right, view.bottom)
+    view.scaleType = PreviewView.ScaleType.FILL_CENTER
+    view.invalidate()
+    Log.i("NAVI", "Preview relaid out: ${width}x${height} children=${view.childCount}")
   }
 
   private fun emitReady() {
@@ -178,6 +224,37 @@ class NaviCameraViewManager(private val context: ReactApplicationContext,
   private fun emitError(message: String) {
     context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
       .emit("NaviCameraError", Arguments.createMap().apply { putString("message", message) })
+  }
+
+  private fun emitCorridor(result: CorridorAnalysis) {
+    Log.i("NAVI", "Corridor ${result.zones.joinToString { "${it.name}:${it.status}" }} " +
+      "${result.latencyMs} ms brightness=${result.meanBrightness} contrast=${result.contrast}")
+    val event = Arguments.createMap()
+    val zones = Arguments.createArray()
+    result.zones.forEach { zone ->
+      zones.pushMap(Arguments.createMap().apply {
+        putString("name", zone.name)
+        putString("status", zone.status.name)
+        putString("surface", zone.surface.name)
+        putDouble("confidence", zone.confidence.toDouble())
+        putArray("obstacles", Arguments.createArray().apply {
+          zone.obstacleLabels.forEach { pushString(it) }
+        })
+      })
+    }
+    event.putArray("zones", zones)
+    event.putString("summary", result.summary)
+    event.putDouble("timestamp", System.currentTimeMillis().toDouble())
+    event.putDouble("latencyMs", result.latencyMs.toDouble())
+    event.putDouble("meanBrightness", result.meanBrightness.toDouble())
+    event.putDouble("contrast", result.contrast.toDouble())
+    context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+      .emit("NaviCorridor", event)
+  }
+
+  private fun emitCorridorError(message: String) {
+    context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+      .emit("NaviCorridorError", Arguments.createMap().apply { putString("message", message) })
   }
 
   override fun onDropViewInstance(view: PreviewView) {

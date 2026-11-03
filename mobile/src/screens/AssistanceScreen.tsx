@@ -1,14 +1,17 @@
 import React from 'react';
 import {Text, View, type ViewStyle} from 'react-native';
 import {CameraView} from '../CameraView';
+import type {CorridorFrame, CorridorZone} from '../corridor';
 import {ActionButton, ScreenFrame, Section, StatusRow, type Theme} from '../ui/design';
 
 export function AssistanceScreen({theme, style, assisting, cameraReady, paused, lastCue,
   lastReading, sceneSummary, approachNote, fps, latency, deliveryMs, error,
+  corridor, corridorError,
   onStart, onPause, onStop, onRepeat, onDescribe, onVoice, onEndVoice, listening}: {
   theme: Theme; style?: ViewStyle; assisting: boolean; cameraReady: boolean; paused: boolean;
   lastCue: string; lastReading: string; sceneSummary: string; approachNote: string;
   fps: number | null; latency: number | null; deliveryMs: number | null; error: string;
+  corridor: CorridorFrame | null; corridorError: string;
   onStart: () => void; onPause: () => void; onStop: () => void; onRepeat: () => void;
   onDescribe: () => void; onVoice: () => void; onEndVoice: () => void; listening: boolean;
 }) {
@@ -21,6 +24,17 @@ export function AssistanceScreen({theme, style, assisting, cameraReady, paused, 
       style={{borderRadius: 18, borderWidth: 2, borderColor: theme.border,
       overflow: 'hidden', backgroundColor: theme.surface}}>
       <CameraView active={assisting} style={{height: 220, width: '100%'}} />
+      {!!corridor && <View pointerEvents="none" style={{position: 'absolute', left: 0, right: 0,
+        bottom: 0, height: '58%', flexDirection: 'row'}}>
+        {corridor.zones.map(zone => <View key={zone.name} style={{flex: 1,
+          borderLeftWidth: zone.name === 'LEFT' ? 0 : 1, borderColor: '#FFFFFF66',
+          backgroundColor: corridorColor(zone)}}>
+          <Text style={{color: '#FFFFFF', backgroundColor: '#00000099', paddingVertical: 3,
+            fontSize: 10, fontWeight: '900', textAlign: 'center'}}>
+            {zone.name} · {zoneLabel(zone)}
+          </Text>
+        </View>)}
+      </View>}
     </View> : <View style={{padding: 24, borderWidth: 2, borderColor: theme.border,
       borderRadius: 18, backgroundColor: theme.surface}}>
       <Text style={{color: theme.secondary, fontSize: 17 * theme.scale,
@@ -44,6 +58,21 @@ export function AssistanceScreen({theme, style, assisting, cameraReady, paused, 
         lineHeight: 26 * theme.scale}}>{lastReading || 'No verified reading yet'}</Text>
     </Section>
 
+    <Section title="Walking-surface research preview" theme={theme}>
+      <Text accessibilityRole="summary" style={{color: theme.text, fontSize: 17 * theme.scale,
+        lineHeight: 24 * theme.scale, fontWeight: '700'}}>
+        {corridor?.summary || (assisting ? 'Assessing the camera image…' : 'Not active')}
+      </Text>
+      <Text style={{color: theme.secondary, fontSize: 13 * theme.scale, lineHeight: 19 * theme.scale}}>
+        Camera-image evidence only. This does not identify a safe or physically clear path.
+      </Text>
+      {!!corridor && <Text style={{color: theme.secondary, fontSize: 13 * theme.scale,
+        lineHeight: 19 * theme.scale}}>{corridor.zones.map(zone =>
+          `${titleCase(zone.name)}: ${zoneLabel(zone).toLowerCase()}`).join(' · ')}</Text>}
+      {!!corridorError && <Text accessibilityRole="alert" style={{color: theme.warning,
+        fontSize: 13 * theme.scale}}>Surface preview unavailable: {corridorError}</Text>}
+    </Section>
+
     <Section title="Controls" theme={theme}>
       {!assisting && <ActionButton label="Start camera assistance" theme={theme} primary
         onPress={onStart} />}
@@ -65,5 +94,29 @@ export function AssistanceScreen({theme, style, assisting, cameraReady, paused, 
       tone="normal" />
     {deliveryMs !== null && <Text style={{color: theme.secondary,
       fontSize: 13 * theme.scale}}>Frame delivery to app: {deliveryMs} ms</Text>}
+    {corridor && <Text style={{color: theme.secondary, fontSize: 13 * theme.scale}}>
+      Surface model: {Math.round(corridor.latencyMs)} ms · sampled about every 3 seconds
+    </Text>}
   </ScreenFrame>;
+}
+
+function corridorColor(zone: CorridorZone): string {
+  if (zone.status === 'OBSTRUCTED') return '#D6454555';
+  if (zone.status === 'POTENTIAL_GROUND') return '#168AAD55';
+  return '#5F6B7355';
+}
+
+function zoneLabel(zone: CorridorZone): string {
+  if (zone.status === 'OBSTRUCTED') return zone.obstacles.length ?
+    `OBSTRUCTED: ${zone.obstacles.join(', ')}` : 'OBSTRUCTED';
+  if (zone.status === 'POTENTIAL_GROUND') return 'POSSIBLE GROUND';
+  if (zone.surface === 'ROAD') return 'ROAD / UNKNOWN';
+  if (zone.surface === 'STAIRS') return 'STAIRS / UNKNOWN';
+  if (zone.surface === 'VEGETATION') return 'VEGETATION / UNKNOWN';
+  if (zone.surface === 'POOR_VISIBILITY') return 'LOW VISIBILITY';
+  return 'UNKNOWN';
+}
+
+function titleCase(value: string): string {
+  return value.charAt(0) + value.slice(1).toLowerCase();
 }

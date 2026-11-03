@@ -36,6 +36,15 @@ function locationWords(zone: Zone): string {
   return zone === 'centre' ? 'in the centre' : `on the ${zone}`;
 }
 
+function centreSafetyCue(label: ObjectLabel, centreCount: number, allCount = centreCount): string {
+  const subject = centreCount === 1 ? `${label[0].toUpperCase()}${label.slice(1)}` :
+    `${number(centreCount)} ${noun(label, centreCount)}`;
+  const countedSubject = `${number(centreCount)} ${noun(label, centreCount)}`;
+  const context = allCount > centreCount ?
+    `${number(allCount)} ${noun(label, allCount)} visible. ${countedSubject}` : subject;
+  return `${context} in the centre of the camera view. Pause and scan left and right`;
+}
+
 export function classifyZone(d: Detection): Zone {
   const centre = d.x + d.width / 2;
   return centre < 1 / 3 ? 'left' : centre > 2 / 3 ? 'right' : 'centre';
@@ -67,8 +76,13 @@ export function describeScene(counts: Record<ObjectLabel, number>): string {
 
 function appearance(label: ObjectLabel, counts: ZoneCounts): SceneEvent {
   const n = total(counts);
+  if (counts.centre > 0) {
+    return {key: `scene:${label}:appear`, text: centreSafetyCue(label, counts.centre, n), priority: 3};
+  }
   if (label === 'person') {
-    return {key: `scene:${label}:appear`, text: `${number(n)} ${noun(label, n)} visible ahead`, priority: 1};
+    const zone = location(counts);
+    return {key: `scene:${label}:appear`,
+      text: `${number(n)} ${noun(label, n)} visible ${locationWords(zone)}`, priority: 1};
   }
   const zone = location(counts);
   return {key: `scene:${label}:appear`,
@@ -79,9 +93,7 @@ function appearance(label: ObjectLabel, counts: ZoneCounts): SceneEvent {
 
 function centreEntry(label: ObjectLabel, counts: ZoneCounts): SceneEvent {
   const n = counts.centre;
-  return {key: `scene:${label}:centre`,
-    text: n === 1 ? `${label[0].toUpperCase()}${label.slice(1)} detected in the centre` :
-      `${number(n)} ${noun(label, n)} now in the centre`, priority: 3};
+  return {key: `scene:${label}:centre`, text: centreSafetyCue(label, n, total(counts)), priority: 3};
 }
 
 function countChange(label: ObjectLabel, counts: ZoneCounts): SceneEvent {
