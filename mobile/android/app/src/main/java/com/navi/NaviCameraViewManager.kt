@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.view.PreviewView
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -17,7 +18,8 @@ import com.facebook.react.uimanager.SimpleViewManager
 import com.facebook.react.uimanager.annotations.ReactProp
 import java.util.concurrent.Executors
 
-class NaviCameraViewManager(private val context: ReactApplicationContext) : SimpleViewManager<PreviewView>() {
+class NaviCameraViewManager(private val context: ReactApplicationContext,
+  private val ocrController: NaviOcrController) : SimpleViewManager<PreviewView>() {
   private class CameraLifecycleOwner : LifecycleOwner {
     private val registry = LifecycleRegistry(this)
     override val lifecycle: Lifecycle get() = registry
@@ -41,6 +43,7 @@ class NaviCameraViewManager(private val context: ReactApplicationContext) : Simp
 
   private fun stopCamera() {
     cameraGeneration++
+    ocrController.detach()
     activeView = null
     lifecycleOwner?.stop()
     lifecycleOwner = null
@@ -88,11 +91,15 @@ class NaviCameraViewManager(private val context: ReactApplicationContext) : Simp
       }
       try {
         provider?.unbindAll()
+        ocrController.detach()
         val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
         val analysis = ImageAnalysis.Builder()
           .setTargetResolution(android.util.Size(640, 480))
           .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
           .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
+        val capture = ImageCapture.Builder()
+          .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+          .setTargetResolution(android.util.Size(1920, 1080)).build()
         analysis.setAnalyzer(executor) { frame ->
           try {
             if (!loggedFirstFrame) Log.i("NAVI", "Analyzer received ${frame.width}x${frame.height} frame")
@@ -125,7 +132,8 @@ class NaviCameraViewManager(private val context: ReactApplicationContext) : Simp
           } finally { frame.close() }
         }
         owner.start()
-        provider?.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+        provider?.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis, capture)
+        ocrController.attach(capture, executor)
         Log.i("NAVI", "CameraX bound; attempt=$attempt size=${view.width}x${view.height}")
         // Fabric sets the native view's bounds without always measuring its
         // children. PreviewView creates its SurfaceView after bind, so lay it

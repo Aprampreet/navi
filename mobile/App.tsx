@@ -11,6 +11,7 @@ import {describeScene, SceneTracker, type Detection} from './src/detections';
 import {movementCues, ObjectTracker} from './src/tracking';
 import {parseCommand, formatInstruction, shouldAdvanceStep, distanceMeters, type Point, type RouteStep} from './src/navigation';
 import {searchPlaces, walkingRoute, type Place} from './src/mapsApi';
+import {AmbientReadingTracker, type TextBlock} from './src/reading';
 
 const Native = NativeModules.NaviNative;
 type Fix = Point & {accuracy: number};
@@ -60,13 +61,19 @@ function NaviApp() {
   const [lastCue, setLastCue] = useState('');
   const [sceneSummary, setSceneSummary] = useState('');
   const [approachNote, setApproachNote] = useState('');
+  const [lastReading, setLastReading] = useState('');
+  const readingTracker = useRef(new AmbientReadingTracker());
+  const readingInFlight = useRef(false);
   const stepIndex = useRef(0);
   const approachingStep = useRef(-1);
   const performanceWindow = useRef({since: 0, frames: 0, inferenceTotal: 0, deliveryTotal: 0});
   const sceneTracker = useRef(new SceneTracker());
   const objectTracker = useRef(new ObjectTracker());
   const approachEstimator = useRef(new ApproachEstimator());
-  const alerts = useMemo(() => new AlertManager((text) => Native.speak(text)), []);
+  const alerts = useMemo(() => new AlertManager((text, source) => source === 'reading' ?
+    Native.speakOffline(text) : Native.speak(text), 5000, (cause, source) => {
+    if (source === 'reading') setError(`Offline speech unavailable: ${String(cause)}. The reading is shown on screen.`);
+  }), []);
   alerts.muted = muted || listening; alerts.paused = paused;
 
   useEffect(() => {
@@ -121,6 +128,7 @@ function NaviApp() {
     });
     const cameraError = emitter.addListener('NaviCameraError', (event: Object) => {
       setError(`Camera or model unavailable: ${(event as {message: string}).message}`);
+      readingTracker.current.reset(); setLastReading('');
       setStatus('Camera unavailable'); cameraReadyRef.current = false; setCameraReady(false); setAssisting(false);
       setNavigating(false); setSceneSummary(''); setApproachNote(''); setLastCue('');
       setLatency(null); setFps(null); setDeliveryMs(null);
@@ -144,6 +152,7 @@ function NaviApp() {
         setLatency(null); setFps(null); setDeliveryMs(null);
         performanceWindow.current = {since: 0, frames: 0, inferenceTotal: 0, deliveryTotal: 0};
         sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
+        readingTracker.current.reset(); setLastReading('');
         alerts.clear(); Native.stopSpeech();
       }
     });
@@ -169,6 +178,7 @@ function NaviApp() {
     setDeliveryMs(null); setLastCue('');
     performanceWindow.current = {since: 0, frames: 0, inferenceTotal: 0, deliveryTotal: 0};
     setSceneSummary(''); setApproachNote('');
+    readingTracker.current.reset(); setLastReading('');
     sceneTracker.current.reset(); objectTracker.current.reset(); approachEstimator.current.reset();
     alerts.clearCamera();
     setAssisting(true); setPaused(false); alerts.paused = false; setStatus('Starting camera preview…');
@@ -176,6 +186,7 @@ function NaviApp() {
     return true;
   }
   function stop() {
+    readingTracker.current.reset(); setLastReading('');
     cameraReadyRef.current = false; setCameraReady(false); setLatency(null); setFps(null);
     setDeliveryMs(null); performanceWindow.current = {since: 0, frames: 0,
       inferenceTotal: 0, deliveryTotal: 0};
@@ -246,6 +257,38 @@ function NaviApp() {
   }
 
   useEffect(() => {
+    if (!assisting || !cameraReady) return;
+    let cancelled = false;
+    let nextScan: ReturnType<typeof setTimeout>;
+    async function scan() {
+      if (cancelled || !cameraReadyRef.current) return;
+      if (readingInFlight.current) {
+        nextScan = setTimeout(() => {scan();}, 500);
+        return;
+      }
+      readingInFlight.current = true;
+      try {
+        const result = await Native.readSurroundings() as {blocks: TextBlock[]};
+        if (cancelled) return;
+        for (const cue of readingTracker.current.update(Array.isArray(result.blocks) ? result.blocks : [], Date.now())) {
+          setLastReading(cue);
+          const voice = await Native.getOfflineVoiceStatus() as {available: boolean; language: string};
+          if (cancelled) return;
+          if (!voice.available) setError(`No installed offline voice for ${voice.language}. Visible text is shown on screen.`);
+          else alerts.enqueue(cue, 2, `text-${cue}`, Date.now(), 'reading');
+        }
+      } catch (cause) {
+        if (!cancelled) console.warn('Local text scan failed', cause);
+      } finally {
+        readingInFlight.current = false;
+        if (!cancelled) nextScan = setTimeout(() => {scan();}, 1500);
+      }
+    }
+    nextScan = setTimeout(() => {scan();}, 400);
+    return () => { cancelled = true; clearTimeout(nextScan); };
+  }, [assisting, cameraReady, alerts]);
+
+  useEffect(() => {
     if (!navigating) return;
     const timer = setInterval(async () => {
       try {
@@ -306,6 +349,7 @@ function NaviApp() {
       {navigating && <Button label="Repeat instruction" onPress={repeat} variant="quiet" />}
     </View>
 
+
     {!!transcript && <View style={styles.transcriptBox}>
       <Text style={styles.smallLabel}>I HEARD</Text>
       <Text style={styles.transcript}>{transcript}</Text>
@@ -341,6 +385,7 @@ function NaviApp() {
           {lastCue || (assisting ? 'Looking for people and objects…' : 'Start assistance to hear object cues.')}
         </Text>
         {!!sceneSummary && <Text style={styles.sceneSummary}>IN VIEW · {sceneSummary}</Text>}
+        {!!lastReading && <Text style={styles.sceneSummary} accessibilityLiveRegion="polite">TEXT · {lastReading}</Text>}
         {!!approachNote && <Text style={styles.approachNote}>{approachNote}</Text>}
         {latency !== null && <Text style={styles.latency}>
           {fps} fps · {latency} ms inference · {deliveryMs} ms to app
@@ -368,7 +413,7 @@ function NaviApp() {
       <View style={styles.toolHalf}><Button label={paused ? 'Resume alerts' : 'Pause alerts'}
         onPress={() => {
           const next = !paused; alerts.paused = next;
-          if (next) alerts.clearCamera();
+          if (next) { alerts.clearCamera(); alerts.clearReading(); }
           setPaused(next);
         }} variant="quiet" compact /></View>
       <View style={styles.toolHalf}><Button label={muted ? 'Unmute voice' : 'Mute voice'}
@@ -387,7 +432,7 @@ function NaviApp() {
 
     <View style={styles.safetyNote}>
       <Text style={styles.safetyTitle}>A note for every walk</Text>
-      <Text style={styles.safetyText}>Use your cane, guide dog and judgment. NAVI cannot confirm safe crossings or clear paths. Camera detection runs on your phone; place search and routes need internet.</Text>
+      <Text style={styles.safetyText}>Use your cane, guide dog and judgment. NAVI cannot confirm safe crossings or clear paths. Camera detection and visible text reading run on your phone; place search and routes need internet. Speak Guidance may use network speech recognition.</Text>
     </View>
   </ScrollView>;
 }

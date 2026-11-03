@@ -1,7 +1,7 @@
 // 5: assistance unavailable; 4: route turn; 3: confirmed spatial change;
 // 2: cautious apparent approach; 1: routine observation.
 export type AlertPriority = 1 | 2 | 3 | 4 | 5;
-export type AlertSource = 'camera' | 'navigation' | 'system';
+export type AlertSource = 'camera' | 'navigation' | 'reading' | 'system';
 type Alert = {text: string; priority: AlertPriority; key: string;
   source: AlertSource; queuedAt: number};
 export class AlertManager {
@@ -9,12 +9,15 @@ export class AlertManager {
   private readonly maxPending = 8;
   private last = new Map<string, number>();
   private running = false;
+  currentSource: AlertSource | null = null;
   muted = false;
   paused = false;
-  constructor(private speak: (text: string) => Promise<unknown>, private cooldownMs = 5000) {}
+  constructor(private speak: (text: string, source: AlertSource) => Promise<unknown>,
+    private cooldownMs = 5000,
+    private onError?: (error: unknown, source: AlertSource) => void) {}
   enqueue(text: string, priority: AlertPriority, key = text, now = Date.now(),
     source: AlertSource = 'system'): boolean {
-    if (this.muted || (this.paused && source === 'camera')) return false;
+    if (this.muted || (this.paused && (source === 'camera' || source === 'reading'))) return false;
     if (now - (this.last.get(key) ?? -Infinity) < this.cooldownMs) return false;
     this.last.set(key, now);
     this.queue.push({text, priority, key, source, queuedAt: Date.now()});
@@ -25,14 +28,18 @@ export class AlertManager {
   }
   clear() { this.queue = []; }
   clearCamera() { this.queue = this.queue.filter(alert => alert.source !== 'camera'); }
+  clearReading() { this.queue = this.queue.filter(alert => alert.source !== 'reading'); }
   private async drain() {
     if (this.running) return;
     this.running = true;
     while (this.queue.length) {
       const alert = this.queue.shift()!;
-      if (this.muted || (alert.source === 'camera' &&
+      if (this.muted || ((alert.source === 'camera' || alert.source === 'reading') &&
         (this.paused || Date.now() - alert.queuedAt > 4000))) continue;
-      try { await this.speak(alert.text); } catch { /* UI shows native TTS errors elsewhere */ }
+      this.currentSource = alert.source;
+      try { await this.speak(alert.text, alert.source); }
+      catch (error) { this.onError?.(error, alert.source); }
+      finally { this.currentSource = null; }
     }
     this.running = false;
   }

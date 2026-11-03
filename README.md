@@ -90,6 +90,12 @@ EXPO_PUBLIC_NAVI_PROXY_URL=http://127.0.0.1:8787 npm start
 
 The debug APK is created under `mobile/android/app/build/outputs/apk/debug/` and installed by `expo run:android --device`. To test offline detection, first load the app, then disable both Wi-Fi and mobile data and tap Start Assistance. Online map routing will be unavailable while disconnected; speech recognition offline support depends on the device's recognition service.
 
+### Ambient visible text reading (offline OCR)
+
+Starting camera assistance or walking guidance also starts periodic still captures from the same CameraX session. The bundled ML Kit Latin OCR model reads English text locally. Prominent text must appear in two captures before NAVI announces its exact recognized words and approximate left, ahead, or right position. The last announcement is shown below the camera preview. Route turns have higher speech priority. Pause alerts, mute, and stop controls apply to text cues too. A local voice is used only if Android reports it as installed and not requiring a network connection; otherwise NAVI shows the text and an error. OCR needs no proxy, backend, or model download at first use.
+
+The existing **Speak Guidance** command path uses Android's default speech recognizer, which is not guaranteed offline. Spoken commands such as “Read that sign” are not yet an offline feature. Place search, route computation, and live map tiles also require internet. A self-contained release APK, rather than the Metro-dependent debug build, is required for a meaningful airplane-mode restart test.
+
 The script targets only the phone's `arm64-v8a` ABI to avoid building emulator architectures. The map reuses Android's built-in WebView and bundles about 170 KB of Leaflet files; it required no additional Android SDK or Gradle downloads.
 
 ## Device test checklist
