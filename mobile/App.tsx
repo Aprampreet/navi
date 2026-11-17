@@ -13,6 +13,7 @@ import {AmbientReadingTracker, type TextBlock} from './src/reading';
 import {destinationChoice, extractDestination, VoiceAgentController} from './src/voiceAgent';
 import {cameraZoneForEvent, HapticManager} from './src/haptics';
 import {CorridorTracker, parseCorridorFrame, type CorridorFrame} from './src/corridor';
+import {acousticAnnouncement, parseAcousticMeasurement} from './src/sonar';
 import {BottomTabs, createTheme, type Appearance, type ScreenName} from './src/ui/design';
 import {HomeScreen} from './src/screens/HomeScreen';
 import {AssistanceScreen} from './src/screens/AssistanceScreen';
@@ -81,6 +82,10 @@ function NaviApp() {
   const [lastReading, setLastReading] = useState('');
   const [corridor, setCorridor] = useState<CorridorFrame | null>(null);
   const [corridorError, setCorridorError] = useState('');
+  const [sonarEnabled, setSonarEnabled] = useState(false);
+  const [sonarPreferenceReady, setSonarPreferenceReady] = useState(false);
+  const [sonarMeasuring, setSonarMeasuring] = useState(false);
+  const [sonarResult, setSonarResult] = useState('');
   const sceneRef = useRef({text: '', at: 0});
   const readingRef = useRef('');
   const instructionRef = useRef('');
@@ -150,6 +155,15 @@ function NaviApp() {
   useEffect(() => {
     if (hapticsReady) AsyncStorage.setItem('navi.haptics', String(hapticsEnabled)).catch(() => {});
   }, [hapticsEnabled, hapticsReady]);
+  useEffect(() => {
+    AsyncStorage.getItem('navi.experimentalSonar').then(value => {
+      setSonarEnabled(value === 'true'); setSonarPreferenceReady(true);
+    }).catch(() => setSonarPreferenceReady(true));
+  }, []);
+  useEffect(() => {
+    if (sonarPreferenceReady)
+      AsyncStorage.setItem('navi.experimentalSonar', String(sonarEnabled)).catch(() => {});
+  }, [sonarEnabled, sonarPreferenceReady]);
 
   useEffect(() => {
     AsyncStorage.multiGet(['navi.appearance', 'navi.contrast', 'navi.largeText', 'navi.speechRate',
@@ -842,6 +856,60 @@ function NaviApp() {
     haptics.enabled = next; haptics.reset(); setHapticsEnabled(next);
     if (next) haptics.voice('wake');
   }
+  function toggleSonar() {
+    const next = !sonarEnabled;
+    setSonarEnabled(next);
+    if (!next) { setSonarResult(''); setSonarMeasuring(false); }
+  }
+  async function measureSonar() {
+    if (!sonarEnabled || sonarMeasuring) return;
+    if (!cameraReadyRef.current) {
+      setError('Start camera assistance before measuring an acoustic reflection.');
+      return;
+    }
+    if (listening) {
+      setError('Finish the current voice command before measuring an acoustic reflection.');
+      return;
+    }
+    if (!await request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)) {
+      setError('Microphone permission is required for experimental acoustic proximity.');
+      return;
+    }
+    setError('');
+    setSonarMeasuring(true);
+    setSonarResult('Measuring… Keep the phone steady and face one nearby object.');
+    alerts.clearCamera(); alerts.clearReading();
+    alerts.paused = true;
+    haptics.paused = true;
+    try {
+      await Native.stopSpeech();
+      const parsed = parseAcousticMeasurement(await Native.measureAcousticDistance());
+      if (!parsed) throw new Error('The phone returned an invalid acoustic estimate');
+      if (parsed.distanceReliable && parsed.roundedMeters != null) {
+        const metres = Number.isInteger(parsed.roundedMeters) ?
+          String(parsed.roundedMeters) : parsed.roundedMeters.toFixed(1);
+        setSonarResult(`Approximately ${metres} ${parsed.roundedMeters === 1 ? 'metre' : 'metres'} · ` +
+          `${parsed.confidenceLabel} confidence · ${Math.round(parsed.latencyMs)} ms`);
+      } else {
+        setSonarResult(`${parsed.reflectionStrength[0].toUpperCase()}${parsed.reflectionStrength.slice(1)} ` +
+          `reflection response · distance uncertain · ${Math.round(parsed.latencyMs)} ms`);
+      }
+      const message = acousticAnnouncement(parsed, sceneRef.current.text);
+      haptics.confirmed();
+      alerts.paused = paused;
+      haptics.paused = paused;
+      alerts.enqueue(message, 5, `sonar-${Date.now()}`, Date.now(), 'ui');
+    } catch (cause) {
+      const message = String(cause).replace(/^Error:\s*/, '');
+      setSonarResult(`No reliable estimate: ${message}`);
+      haptics.error('sonar');
+      setError(`Experimental acoustic proximity: ${message}`);
+    } finally {
+      alerts.paused = paused;
+      haptics.paused = paused;
+      setSonarMeasuring(false);
+    }
+  }
   async function toggleWake() {
     if (voiceActivation) { setVoiceActivation(false); return; }
     if (await request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)) setVoiceActivation(true);
@@ -919,7 +987,8 @@ function NaviApp() {
       onRefresh={() => {void refreshLocation();}} />}
     {screen === 'settings' && <SettingsScreen theme={theme} appearance={appearance} speechRate={speechRate}
       verbosity={verbosity} hapticsEnabled={hapticsEnabled} highContrast={highContrast}
-      largeText={largeText} voiceActivation={voiceActivation} voiceState={voiceState}
+      largeText={largeText} voiceActivation={voiceActivation} sonarEnabled={sonarEnabled}
+      voiceState={voiceState}
       offlineVoice={offlineVoice} cameraPermission={cameraPermission}
       microphonePermission={microphonePermission} locationPermission={locationPermission}
       onSpeechRate={setSpeechRate} onVerbosity={setVerbosity} onHaptics={toggleHaptics}
@@ -927,6 +996,7 @@ function NaviApp() {
       onContrast={() => setHighContrast(!highContrast)}
       onLargeText={() => setLargeText(!largeText)}
       onVoiceActivation={() => {void toggleWake();}}
+      onSonar={toggleSonar}
       onCheckPermissions={() => {void checkSettingsPermissions();}}
       guardian={guardian} onGuardianSave={(...args) => {void saveGuardian(...args);}}
       onGuardianTest={testGuardian} />}
@@ -938,9 +1008,10 @@ function NaviApp() {
         sceneSummary={sceneSummary} approachNote={approachNote} fps={fps}
         latency={latency} deliveryMs={deliveryMs} error={error} listening={listening}
         corridor={corridor} corridorError={corridorError}
+        sonarEnabled={sonarEnabled} sonarMeasuring={sonarMeasuring} sonarResult={sonarResult}
         onStart={() => {void startAssistance();}} onPause={toggleCameraAlerts}
         onStop={stopCameraOnly} onRepeat={repeatLastNow} onDescribe={describeNow}
-        onVoice={listen} onEndVoice={endVoiceSessionNow} />
+        onVoice={listen} onEndVoice={endVoiceSessionNow} onSonar={() => {void measureSonar();}} />
     </View>
     <View style={{paddingBottom: insets.bottom, backgroundColor: theme.surface}}>
       <BottomTabs active={screen} onChange={changeScreen} theme={theme} />

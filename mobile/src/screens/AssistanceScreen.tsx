@@ -6,14 +6,16 @@ import {ActionButton, ScreenFrame, Section, StatusRow, type Theme} from '../ui/d
 
 export function AssistanceScreen({theme, style, assisting, cameraReady, paused, lastCue,
   lastReading, sceneSummary, approachNote, fps, latency, deliveryMs, error,
-  corridor, corridorError,
-  onStart, onPause, onStop, onRepeat, onDescribe, onVoice, onEndVoice, listening}: {
+  corridor, corridorError, sonarEnabled, sonarMeasuring, sonarResult,
+  onStart, onPause, onStop, onRepeat, onDescribe, onVoice, onEndVoice, onSonar, listening}: {
   theme: Theme; style?: ViewStyle; assisting: boolean; cameraReady: boolean; paused: boolean;
   lastCue: string; lastReading: string; sceneSummary: string; approachNote: string;
   fps: number | null; latency: number | null; deliveryMs: number | null; error: string;
   corridor: CorridorFrame | null; corridorError: string;
+  sonarEnabled: boolean; sonarMeasuring: boolean; sonarResult: string;
   onStart: () => void; onPause: () => void; onStop: () => void; onRepeat: () => void;
   onDescribe: () => void; onVoice: () => void; onEndVoice: () => void; listening: boolean;
+  onSonar: () => void;
 }) {
   return <ScreenFrame title="Live assistance" theme={theme} style={style}
     description="Spoken scene changes are primary. The camera view is a visual reference.">
@@ -72,6 +74,19 @@ export function AssistanceScreen({theme, style, assisting, cameraReady, paused, 
       {!!corridorError && <Text accessibilityRole="alert" style={{color: theme.warning,
         fontSize: 13 * theme.scale}}>Surface preview unavailable: {corridorError}</Text>}
     </Section>
+
+    {sonarEnabled && <Section title="Experimental acoustic proximity" theme={theme}>
+      <Text accessibilityRole="summary" style={{color: theme.text,
+        fontSize: 17 * theme.scale, lineHeight: 24 * theme.scale, fontWeight: '700'}}>
+        {sonarResult || 'No acoustic estimate yet'}
+      </Text>
+      <Text style={{color: theme.secondary, fontSize: 13 * theme.scale,
+        lineHeight: 19 * theme.scale}}>Face one nearby object and hold the phone steady.
+        The brief high-frequency chirps estimate a reflection, not a verified person distance.</Text>
+      <ActionButton label={sonarMeasuring ? 'Measuring acoustic reflection…' :
+        'Estimate nearby reflection'} theme={theme} onPress={onSonar}
+        disabled={!cameraReady || listening || sonarMeasuring} />
+    </Section>}
 
     <Section title="Controls" theme={theme}>
       {!assisting && <ActionButton label="Start camera assistance" theme={theme} primary

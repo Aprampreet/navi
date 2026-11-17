@@ -23,11 +23,16 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class NaviNativeModule(private val context: ReactApplicationContext,
   private val ocrController: NaviOcrController) : ReactContextBaseJavaModule(context) {
   override fun getName() = "NaviNative"
   private val voice = NaviOfflineVoice(context)
+  private val sonar = NaviSonar(context)
+  private val sonarWorker = Executors.newSingleThreadExecutor()
+  private val sonarBusy = AtomicBoolean(false)
   private val mainHandler = Handler(Looper.getMainLooper())
   private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
   private val focusListener = AudioManager.OnAudioFocusChangeListener { }
@@ -128,6 +133,50 @@ class NaviNativeModule(private val context: ReactApplicationContext,
   @ReactMethod fun readSurroundings(promise: Promise) {
     ocrController.read(promise)
   }
+  @ReactMethod fun measureAcousticDistance(promise: Promise) {
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+      promise.reject("SONAR_MIC_DENIED", "Microphone permission is required for acoustic ranging")
+      return
+    }
+    if (!sonarBusy.compareAndSet(false, true)) {
+      promise.reject("SONAR_BUSY", "An acoustic measurement is already running")
+      return
+    }
+    if (synchronized(utterances) { utterances.isNotEmpty() }) {
+      sonarBusy.set(false)
+      promise.reject("SONAR_SPEECH_ACTIVE", "Wait for spoken guidance to finish before measuring")
+      return
+    }
+    mainHandler.post {
+      val resumeVoice = voice.suspendForExternalAudio()
+      sonarWorker.execute {
+        try {
+          val result = sonar.measure()
+          mainHandler.post {
+            if (resumeVoice) voice.resumeAfterExternalAudio()
+            sonarBusy.set(false)
+            promise.resolve(com.facebook.react.bridge.Arguments.createMap().apply {
+              if (result.distanceMeters == null) putNull("distanceMeters")
+              else putDouble("distanceMeters", result.distanceMeters)
+              putBoolean("distanceReliable", result.distanceReliable)
+              putString("reflectionStrength", result.reflectionStrength)
+              putDouble("responseRatio", result.responseRatio)
+              putDouble("confidence", result.confidence)
+              putInt("readings", result.readings)
+              putDouble("latencyMs", result.latencyMs.toDouble())
+              putDouble("spreadMeters", result.spreadMeters)
+            })
+          }
+        } catch (error: Exception) {
+          mainHandler.post {
+            if (resumeVoice) voice.resumeAfterExternalAudio()
+            sonarBusy.set(false)
+            promise.reject("SONAR_NO_READING", error.message ?: "Acoustic distance could not be estimated")
+          }
+        }
+      }
+    }
+  }
   @ReactMethod fun stopSpeech(promise: Promise) {
     tts.stop()
     voice.setSpeechActive(false)
@@ -166,6 +215,6 @@ class NaviNativeModule(private val context: ReactApplicationContext,
   @ReactMethod fun removeListeners(count: Int) = Unit
 
   override fun invalidate() {
-    voice.stop(); ocrController.close(); tts.shutdown(); super.invalidate()
+    voice.stop(); sonarWorker.shutdownNow(); ocrController.close(); tts.shutdown(); super.invalidate()
   }
 }

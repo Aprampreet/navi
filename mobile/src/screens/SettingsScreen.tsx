@@ -7,18 +7,18 @@ import {GuardianSettings} from './GuardianSettings';
 export type Verbosity = 'focused' | 'all';
 
 export function SettingsScreen({theme, appearance, speechRate, verbosity, hapticsEnabled, highContrast,
-  largeText, voiceActivation, voiceState, offlineVoice, cameraPermission,
+  largeText, voiceActivation, sonarEnabled, voiceState, offlineVoice, cameraPermission,
   microphonePermission, locationPermission, onSpeechRate, onVerbosity, onHaptics,
-  onAppearance, onContrast, onLargeText, onVoiceActivation, onCheckPermissions,
+  onAppearance, onContrast, onLargeText, onVoiceActivation, onSonar, onCheckPermissions,
   guardian, onGuardianSave, onGuardianTest}: {
   theme: Theme; appearance: Appearance; speechRate: number; verbosity: Verbosity; hapticsEnabled: boolean;
-  highContrast: boolean; largeText: boolean; voiceActivation: boolean;
+  highContrast: boolean; largeText: boolean; voiceActivation: boolean; sonarEnabled: boolean;
   voiceState: string; offlineVoice: string; cameraPermission: string;
   microphonePermission: string; locationPermission: string;
   onSpeechRate: (rate: number) => void; onVerbosity: (value: Verbosity) => void;
   onHaptics: () => void; onAppearance: (value: Appearance) => void;
   onContrast: () => void; onLargeText: () => void;
-  onVoiceActivation: () => void; onCheckPermissions: () => void;
+  onVoiceActivation: () => void; onSonar: () => void; onCheckPermissions: () => void;
   guardian: GuardianState;
   onGuardianSave: (name: string, phone: string, confirmation: string,
     enabled: boolean, sensitivity: GuardianSensitivity, seconds: number) => void;
@@ -79,6 +79,17 @@ export function SettingsScreen({theme, appearance, speechRate, verbosity, haptic
         on Home or Navigation if it misses you.</Text>
     </Section>
 
+    <Section title="Experimental acoustic proximity" theme={theme}>
+      <ActionButton theme={theme}
+        label={`Phone sonar experiment ${sonarEnabled ? 'on' : 'off'}`}
+        selected={sonarEnabled} onPress={onSonar}
+        hint="Enable an on-demand estimate from phone speaker and microphone echoes" />
+      <Text style={{color: theme.secondary, fontSize: 14 * theme.scale,
+        lineHeight: 21 * theme.scale}}>Research preview only. It measures a nearby acoustic
+        reflection, not a verified person or obstacle distance. NAVI rejects weak or
+        inconsistent results.</Text>
+    </Section>
+
     <Section title="Permissions" theme={theme}>
       <StatusRow theme={theme} label="Camera" value={cameraPermission} />
       <StatusRow theme={theme} label="Microphone" value={microphonePermission} />
@@ -94,7 +105,8 @@ export function SettingsScreen({theme, appearance, speechRate, verbosity, haptic
       <Text style={{color: theme.secondary, fontSize: 15 * theme.scale,
         lineHeight: 23 * theme.scale}}>Camera detection, OCR, and voice recognition run on this phone.
         Place search, route requests, and live map tiles need a network connection.
-        NAVI does not verify safe crossings, accessible routes, or obstacle distance.</Text>
+        Acoustic proximity is experimental. NAVI does not verify safe crossings,
+        accessible routes, or obstacle distance.</Text>
     </Section>
   </ScreenFrame>;
 }

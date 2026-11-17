@@ -227,6 +227,35 @@ class NaviOfflineVoice(private val context: ReactApplicationContext) : Recogniti
     promise.resolve(null)
   }
 
+  /**
+   * Releases AudioRecord without unloading the bundled model so another local
+   * audio sensor can briefly use the microphone.
+   */
+  fun suspendForExternalAudio(): Boolean {
+    val shouldResume = wanted && model != null
+    clearTimeout()
+    awaitingAcknowledgement = false
+    service?.cancel()
+    service?.shutdown()
+    service = null
+    recognizer?.close()
+    recognizer = null
+    mode = Mode.OFF
+    lastPause = null
+    return shouldResume
+  }
+
+  fun resumeAfterExternalAudio() {
+    if (!wanted || model == null || service != null) return
+    mode = Mode.WAKE
+    try {
+      openService()
+      emit("NaviVoiceReady")
+    } catch (error: Exception) {
+      emit("NaviVoiceError", error.message ?: "Wake listener could not restart after acoustic ranging")
+    }
+  }
+
   private fun scheduleTimeout() {
     clearTimeout()
     val timeout = Runnable {
