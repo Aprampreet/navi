@@ -28,6 +28,8 @@ final class NaviCameraPreview: UIView, AVCaptureVideoDataOutputSampleBufferDeleg
   private let context = CIContext(options: [.cacheIntermediates: false])
   private var configured = false
   private var frameNumber = 0
+  private var visionPipeline: NaviVisionPipeline?
+  private var visionErrorReported = false
 
   override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
   private var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
@@ -112,6 +114,14 @@ final class NaviCameraPreview: UIView, AVCaptureVideoDataOutputSampleBufferDeleg
     let image = CIImage(cvPixelBuffer: buffer)
     if let cgImage = context.createCGImage(image, from: image.extent) {
       NaviFrameStore.shared.update(cgImage)
+      if visionPipeline == nil && !visionErrorReported {
+        do { visionPipeline = try NaviVisionPipeline() }
+        catch {
+          visionErrorReported = true
+          NaviNative.current?.emit("NaviCameraError", body: ["message": error.localizedDescription])
+        }
+      }
+      visionPipeline?.process(cgImage, frameNumber: frameNumber)
     }
   }
 

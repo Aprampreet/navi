@@ -21,6 +21,10 @@
 		A10000060000000000000001 /* NaviMapViewBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A10000160000000000000001 /* NaviMapViewBridge.m */; };
 		A10000070000000000000001 /* NaviGuardian.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000170000000000000001 /* NaviGuardian.swift */; };
 		A10000080000000000000001 /* NaviGuardianBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A10000180000000000000001 /* NaviGuardianBridge.m */; };
+		A10000090000000000000001 /* NaviVisionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000190000000000000001 /* NaviVisionModels.swift */; };
+		A100000A0000000000000001 /* yolo11n.onnx in Resources */ = {isa = PBXBuildFile; fileRef = A100001A0000000000000001 /* yolo11n.onnx */; };
+		A100000B0000000000000001 /* segformer_b0_ade20k_quantized.onnx in Resources */ = {isa = PBXBuildFile; fileRef = A100001B0000000000000001 /* segformer_b0_ade20k_quantized.onnx */; };
+		A100000C0000000000000001 /* NaviORT.mm in Sources */ = {isa = PBXBuildFile; fileRef = A100001C0000000000000001 /* NaviORT.mm */; };
 		EC80C39D995E6E6689191750 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
@@ -43,6 +47,12 @@
 		A10000160000000000000001 /* NaviMapViewBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = NaviMapViewBridge.m; path = NAVI/NaviMapViewBridge.m; sourceTree = "<group>"; };
 		A10000170000000000000001 /* NaviGuardian.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NaviGuardian.swift; path = NAVI/NaviGuardian.swift; sourceTree = "<group>"; };
 		A10000180000000000000001 /* NaviGuardianBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = NaviGuardianBridge.m; path = NAVI/NaviGuardianBridge.m; sourceTree = "<group>"; };
+		A10000190000000000000001 /* NaviVisionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NaviVisionModels.swift; path = NAVI/NaviVisionModels.swift; sourceTree = "<group>"; };
+		A100001A0000000000000001 /* yolo11n.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; name = yolo11n.onnx; path = ../android/app/src/main/assets/yolo11n.onnx; sourceTree = SOURCE_ROOT; };
+		A100001B0000000000000001 /* segformer_b0_ade20k_quantized.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; name = segformer_b0_ade20k_quantized.onnx; path = ../android/app/src/main/assets/segformer_b0_ade20k_quantized.onnx; sourceTree = SOURCE_ROOT; };
+		A100001C0000000000000001 /* NaviORT.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = NaviORT.mm; path = NAVI/NaviORT.mm; sourceTree = "<group>"; };
+		A100001D0000000000000001 /* NaviORT.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = NaviORT.h; path = NAVI/NaviORT.h; sourceTree = "<group>"; };
+		A100001E0000000000000001 /* NAVI-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "NAVI-Bridging-Header.h"; path = "NAVI/NAVI-Bridging-Header.h"; sourceTree = "<group>"; };
 		BC8C51A1B39EAD18B8B30A51 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-NAVI/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -73,6 +83,12 @@
 				A10000160000000000000001 /* NaviMapViewBridge.m */,
 				A10000170000000000000001 /* NaviGuardian.swift */,
 				A10000180000000000000001 /* NaviGuardianBridge.m */,
+				A10000190000000000000001 /* NaviVisionModels.swift */,
+				A100001A0000000000000001 /* yolo11n.onnx */,
+				A100001B0000000000000001 /* segformer_b0_ade20k_quantized.onnx */,
+				A100001C0000000000000001 /* NaviORT.mm */,
+				A100001D0000000000000001 /* NaviORT.h */,
+				A100001E0000000000000001 /* NAVI-Bridging-Header.h */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
@@ -208,6 +224,8 @@
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				EC80C39D995E6E6689191750 /* PrivacyInfo.xcprivacy in Resources */,
+				A100000A0000000000000001 /* yolo11n.onnx in Resources */,
+				A100000B0000000000000001 /* segformer_b0_ade20k_quantized.onnx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -238,9 +256,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NAVI/Pods-NAVI-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NAVI/Pods-NAVI-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -300,9 +322,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NAVI/Pods-NAVI-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NAVI/Pods-NAVI-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -326,6 +352,8 @@
 				A10000060000000000000001 /* NaviMapViewBridge.m in Sources */,
 				A10000070000000000000001 /* NaviGuardian.swift in Sources */,
 				A10000080000000000000001 /* NaviGuardianBridge.m in Sources */,
+				A10000090000000000000001 /* NaviVisionModels.swift in Sources */,
+				A100000C0000000000000001 /* NaviORT.mm in Sources */,
 				631CD25FCD8CDE016C006E4B /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -340,6 +368,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 65GBY4384N;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = NAVI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
@@ -357,6 +386,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.navi.assistance;
 				PRODUCT_NAME = NAVI;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_OBJC_BRIDGING_HEADER = "NAVI/NAVI-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -371,6 +401,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 65GBY4384N;
 				INFOPLIST_FILE = NAVI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -387,6 +418,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.navi.assistance;
 				PRODUCT_NAME = NAVI;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_OBJC_BRIDGING_HEADER = "NAVI/NAVI-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";

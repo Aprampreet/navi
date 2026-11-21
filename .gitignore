@@ -9,6 +9,8 @@ mobile/android/app/build/
 mobile/android/build/
 mobile/android/local.properties
 mobile/android/gradle.properties.local
+mobile/ios/.derived-*/
+mobile/ios/.swift-module-cache/
 *.pt
 /yolo11n.onnx
 .env

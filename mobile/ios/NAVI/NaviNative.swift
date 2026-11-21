@@ -205,7 +205,8 @@ final class NaviNative: RCTEventEmitter, AVSpeechSynthesizerDelegate, CLLocation
     request.recognitionLevel = .accurate
     request.usesLanguageCorrection = true
     DispatchQueue.global(qos: .userInitiated).async {
-      do { try VNImageRequestHandler(cgImage: image, orientation: .right).perform([request]) }
+      // The capture output connection already rotates frames into portrait.
+      do { try VNImageRequestHandler(cgImage: image, orientation: .up).perform([request]) }
       catch { reject("OCR_FAILED", error.localizedDescription, error) }
     }
   }

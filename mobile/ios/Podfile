@@ -17,6 +17,12 @@ end
 
 target 'NAVI' do
   use_expo_modules!
+  # Keep the same local ONNX models and runtime family on Android and iOS.
+  if ENV['NAVI_ORT_POD_PATH']
+    pod 'onnxruntime-c', :path => ENV['NAVI_ORT_POD_PATH']
+  else
+    pod 'onnxruntime-c', '1.24.3'
+  end
 
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];

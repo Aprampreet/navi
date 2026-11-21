@@ -3,10 +3,10 @@ internal import Expo
 
 @main
 class AppDelegate: ExpoAppDelegate {
-  func application(
+  override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    true
+    super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 }
