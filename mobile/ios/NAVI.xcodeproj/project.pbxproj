@@ -9,9 +9,23 @@
 /* Begin PBXBuildFile section */
 		0C80B921A6F3F58F76C31292 /* libPods-NAVI.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-NAVI.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		631CD25FCD8CDE016C006E4B /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC8C51A1B39EAD18B8B30A51 /* ExpoModulesProvider.swift */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		761780EF2CA45674006654EF /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EE2CA45674006654EF /* SceneDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		A10000010000000000000001 /* NaviNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000110000000000000001 /* NaviNative.swift */; };
+		A10000020000000000000001 /* NaviNativeBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A10000120000000000000001 /* NaviNativeBridge.m */; };
+		A10000030000000000000001 /* NaviCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000130000000000000001 /* NaviCameraView.swift */; };
+		A10000040000000000000001 /* NaviCameraViewBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A10000140000000000000001 /* NaviCameraViewBridge.m */; };
+		A10000050000000000000001 /* NaviMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000150000000000000001 /* NaviMapView.swift */; };
+		A10000060000000000000001 /* NaviMapViewBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A10000160000000000000001 /* NaviMapViewBridge.m */; };
+		A10000070000000000000001 /* NaviGuardian.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000170000000000000001 /* NaviGuardian.swift */; };
+		A10000080000000000000001 /* NaviGuardianBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A10000180000000000000001 /* NaviGuardianBridge.m */; };
+		A10000090000000000000001 /* NaviVisionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000190000000000000001 /* NaviVisionModels.swift */; };
+		A100000A0000000000000001 /* yolo11n.onnx in Resources */ = {isa = PBXBuildFile; fileRef = A100001A0000000000000001 /* yolo11n.onnx */; };
+		A100000B0000000000000001 /* segformer_b0_ade20k_quantized.onnx in Resources */ = {isa = PBXBuildFile; fileRef = A100001B0000000000000001 /* segformer_b0_ade20k_quantized.onnx */; };
+		A100000C0000000000000001 /* NaviORT.mm in Sources */ = {isa = PBXBuildFile; fileRef = A100001C0000000000000001 /* NaviORT.mm */; };
+		EC80C39D995E6E6689191750 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +39,21 @@
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = NAVI/AppDelegate.swift; sourceTree = "<group>"; };
 		761780EE2CA45674006654EF /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SceneDelegate.swift; path = NAVI/SceneDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = NAVI/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		A10000110000000000000001 /* NaviNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NaviNative.swift; path = NAVI/NaviNative.swift; sourceTree = "<group>"; };
+		A10000120000000000000001 /* NaviNativeBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = NaviNativeBridge.m; path = NAVI/NaviNativeBridge.m; sourceTree = "<group>"; };
+		A10000130000000000000001 /* NaviCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NaviCameraView.swift; path = NAVI/NaviCameraView.swift; sourceTree = "<group>"; };
+		A10000140000000000000001 /* NaviCameraViewBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = NaviCameraViewBridge.m; path = NAVI/NaviCameraViewBridge.m; sourceTree = "<group>"; };
+		A10000150000000000000001 /* NaviMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NaviMapView.swift; path = NAVI/NaviMapView.swift; sourceTree = "<group>"; };
+		A10000160000000000000001 /* NaviMapViewBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = NaviMapViewBridge.m; path = NAVI/NaviMapViewBridge.m; sourceTree = "<group>"; };
+		A10000170000000000000001 /* NaviGuardian.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NaviGuardian.swift; path = NAVI/NaviGuardian.swift; sourceTree = "<group>"; };
+		A10000180000000000000001 /* NaviGuardianBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = NaviGuardianBridge.m; path = NAVI/NaviGuardianBridge.m; sourceTree = "<group>"; };
+		A10000190000000000000001 /* NaviVisionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NaviVisionModels.swift; path = NAVI/NaviVisionModels.swift; sourceTree = "<group>"; };
+		A100001A0000000000000001 /* yolo11n.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; name = yolo11n.onnx; path = ../android/app/src/main/assets/yolo11n.onnx; sourceTree = SOURCE_ROOT; };
+		A100001B0000000000000001 /* segformer_b0_ade20k_quantized.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; name = segformer_b0_ade20k_quantized.onnx; path = ../android/app/src/main/assets/segformer_b0_ade20k_quantized.onnx; sourceTree = SOURCE_ROOT; };
+		A100001C0000000000000001 /* NaviORT.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = NaviORT.mm; path = NAVI/NaviORT.mm; sourceTree = "<group>"; };
+		A100001D0000000000000001 /* NaviORT.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = NaviORT.h; path = NAVI/NaviORT.h; sourceTree = "<group>"; };
+		A100001E0000000000000001 /* NAVI-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "NAVI-Bridging-Header.h"; path = "NAVI/NAVI-Bridging-Header.h"; sourceTree = "<group>"; };
+		BC8C51A1B39EAD18B8B30A51 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-NAVI/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -46,9 +75,31 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				761780EE2CA45674006654EF /* SceneDelegate.swift */,
+				A10000110000000000000001 /* NaviNative.swift */,
+				A10000120000000000000001 /* NaviNativeBridge.m */,
+				A10000130000000000000001 /* NaviCameraView.swift */,
+				A10000140000000000000001 /* NaviCameraViewBridge.m */,
+				A10000150000000000000001 /* NaviMapView.swift */,
+				A10000160000000000000001 /* NaviMapViewBridge.m */,
+				A10000170000000000000001 /* NaviGuardian.swift */,
+				A10000180000000000000001 /* NaviGuardianBridge.m */,
+				A10000190000000000000001 /* NaviVisionModels.swift */,
+				A100001A0000000000000001 /* yolo11n.onnx */,
+				A100001B0000000000000001 /* segformer_b0_ade20k_quantized.onnx */,
+				A100001C0000000000000001 /* NaviORT.mm */,
+				A100001D0000000000000001 /* NaviORT.h */,
+				A100001E0000000000000001 /* NAVI-Bridging-Header.h */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
+			);
+			name = NAVI;
+			sourceTree = "<group>";
+		};
+		23D4ADED6B94DCFB4F4A3DB7 /* NAVI */ = {
+			isa = PBXGroup;
+			children = (
+				BC8C51A1B39EAD18B8B30A51 /* ExpoModulesProvider.swift */,
 			);
 			name = NAVI;
 			sourceTree = "<group>";
@@ -62,6 +113,14 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		50F4C8599690ACF39A987D9C /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				23D4ADED6B94DCFB4F4A3DB7 /* NAVI */,
+			);
+			name = ExpoModulesProviders;
+			sourceTree = "<group>";
+		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
 			isa = PBXGroup;
 			children = (
@@ -69,7 +128,7 @@
 			name = Libraries;
 			sourceTree = "<group>";
 		};
-		83CBB9F61A601CBA00E9B192 /* PBXGroup */ = {
+		83CBB9F61A601CBA00E9B192 = {
 			isa = PBXGroup;
 			children = (
 				13B07FAE1A68108700A75B9A /* NAVI */,
@@ -77,6 +136,7 @@
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				BBD78D7AC51CEA395F1C20DB /* Pods */,
+				50F4C8599690ACF39A987D9C /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -108,6 +168,7 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "NAVI" */;
 			buildPhases = (
 				C38B50BA6285516D6DCD4F65 /* [CP] Check Pods Manifest.lock */,
+				CB1810B9AEE86AB3199EBC28 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
@@ -127,7 +188,7 @@
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		83CBB9F71A601CBA00E9B192 = {
+		83CBB9F71A601CBA00E9B192 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				LastUpgradeCheck = 1210;
@@ -145,7 +206,7 @@
 				en,
 				Base,
 			);
-			mainGroup = 83CBB9F61A601CBA00E9B192 /* PBXGroup */;
+			mainGroup = 83CBB9F61A601CBA00E9B192;
 			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -162,6 +223,9 @@
 			files = (
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
+				EC80C39D995E6E6689191750 /* PrivacyInfo.xcprivacy in Resources */,
+				A100000A0000000000000001 /* yolo11n.onnx in Resources */,
+				A100000B0000000000000001 /* segformer_b0_ade20k_quantized.onnx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -192,9 +256,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NAVI/Pods-NAVI-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NAVI/Pods-NAVI-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -223,6 +291,29 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
+		CB1810B9AEE86AB3199EBC28 /* [Expo] Configure project */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/.xcode.env",
+				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/Pods/Target Support Files/Pods-NAVI/expo-configure-project.sh",
+			);
+			name = "[Expo] Configure project";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Pods/Target Support Files/Pods-NAVI/ExpoModulesProvider.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-NAVI/expo-configure-project.sh\"\n";
+		};
 		E235C05ADACE081382539298 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -231,9 +322,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NAVI/Pods-NAVI-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-NAVI/Pods-NAVI-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -249,6 +344,17 @@
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
 				761780EF2CA45674006654EF /* SceneDelegate.swift in Sources */,
+				A10000010000000000000001 /* NaviNative.swift in Sources */,
+				A10000020000000000000001 /* NaviNativeBridge.m in Sources */,
+				A10000030000000000000001 /* NaviCameraView.swift in Sources */,
+				A10000040000000000000001 /* NaviCameraViewBridge.m in Sources */,
+				A10000050000000000000001 /* NaviMapView.swift in Sources */,
+				A10000060000000000000001 /* NaviMapViewBridge.m in Sources */,
+				A10000070000000000000001 /* NaviGuardian.swift in Sources */,
+				A10000080000000000000001 /* NaviGuardianBridge.m in Sources */,
+				A10000090000000000000001 /* NaviVisionModels.swift in Sources */,
+				A100000C0000000000000001 /* NaviORT.mm in Sources */,
+				631CD25FCD8CDE016C006E4B /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -262,6 +368,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 65GBY4384N;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = NAVI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
@@ -275,9 +382,11 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.example.$(PRODUCT_NAME:rfc1034identifier)";
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
+				PRODUCT_BUNDLE_IDENTIFIER = com.navi.assistance;
 				PRODUCT_NAME = NAVI;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_OBJC_BRIDGING_HEADER = "NAVI/NAVI-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -292,6 +401,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 65GBY4384N;
 				INFOPLIST_FILE = NAVI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -304,9 +414,11 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.example.$(PRODUCT_NAME:rfc1034identifier)";
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
+				PRODUCT_BUNDLE_IDENTIFIER = com.navi.assistance;
 				PRODUCT_NAME = NAVI;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_OBJC_BRIDGING_HEADER = "NAVI/NAVI-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
@@ -374,6 +486,10 @@
 				);
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				OTHER_CFLAGS = (
+					"$(inherited)",
+					"-DRCT_REMOVE_LEGACY_ARCH=1",
+				);
 				OTHER_CPLUSPLUSFLAGS = (
 					"$(OTHER_CFLAGS)",
 					"-DFOLLY_NO_CONFIG",
@@ -381,9 +497,14 @@
 					"-DFOLLY_USE_LIBCPP=1",
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
+					"-DRCT_REMOVE_LEGACY_ARCH=1",
 				);
+				PODFILE_DIR = "$(SRCROOT)";
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
 				SWIFT_VERSION = 5.0;
+				USE_HERMES = true;
 			};
 			name = Debug;
 		};
@@ -440,6 +561,10 @@
 					"\"$(inherited)\"",
 				);
 				MTL_ENABLE_DEBUG_INFO = NO;
+				OTHER_CFLAGS = (
+					"$(inherited)",
+					"-DRCT_REMOVE_LEGACY_ARCH=1",
+				);
 				OTHER_CPLUSPLUSFLAGS = (
 					"$(OTHER_CFLAGS)",
 					"-DFOLLY_NO_CONFIG",
@@ -447,10 +572,14 @@
 					"-DFOLLY_USE_LIBCPP=1",
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
+					"-DRCT_REMOVE_LEGACY_ARCH=1",
 				);
+				PODFILE_DIR = "$(SRCROOT)";
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
-				VALIDATE_PRODUCT = YES;
 				SWIFT_VERSION = 5.0;
+				USE_HERMES = true;
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -477,5 +606,5 @@
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = 83CBB9F71A601CBA00E9B192;
+	rootObject = 83CBB9F71A601CBA00E9B192 /* Project object */;
 }
