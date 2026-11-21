@@ -34,7 +34,13 @@
       <true/>
     </dict>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string/>
+    <string>NAVI uses your location to create and follow walking routes.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>NAVI uses the rear camera to identify supported objects and read visible text.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>NAVI uses the microphone for hands-free voice commands.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>NAVI converts your spoken commands into actions on this device.</string>
     <key>RCTNewArchEnabled</key>
     <true/>
     <key>UIApplicationSceneManifest</key>

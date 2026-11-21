@@ -3,6 +3,16 @@
     "name": "NAVI",
     "slug": "navi-assistive-prototype",
     "version": "0.0.1",
+    "ios": {
+      "bundleIdentifier": "com.navi.assistance",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "NAVI uses the rear camera to identify supported objects and read visible text.",
+        "NSMicrophoneUsageDescription": "NAVI uses the microphone for hands-free voice commands.",
+        "NSSpeechRecognitionUsageDescription": "NAVI converts your spoken commands into actions on this device.",
+        "NSLocationWhenInUseUsageDescription": "NAVI uses your location to create and follow walking routes."
+      }
+    },
     "android": {
       "package": "com.navi",
       "permissions": ["CAMERA", "RECORD_AUDIO", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]

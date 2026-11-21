@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {AccessibilityInfo, AppState, Modal, NativeEventEmitter, NativeModules, PermissionsAndroid, StatusBar, Vibration,
+import {AccessibilityInfo, AppState, Modal, NativeEventEmitter, NativeModules, Platform, StatusBar, Vibration,
   Text, View, useWindowDimensions, type ViewStyle} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {SafeAreaProvider, useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -22,6 +22,8 @@ import {SettingsScreen, type Verbosity} from './src/screens/SettingsScreen';
 import {GuardianCoordinator, initialGuardian, type GuardianSensitivity,
   type GuardianState, type GuardianTransport} from './src/guardian';
 import {ActionButton} from './src/ui/design';
+import {checkPermission, requestAutomaticSmsPermission, requestPermission,
+  type NaviPermission} from './src/platform/permissions';
 
 const Native = NativeModules.NaviNative;
 const Guardian = NativeModules.NaviGuardian;
@@ -103,8 +105,13 @@ function NaviApp() {
   const objectTracker = useRef(new ObjectTracker());
   const approachEstimator = useRef(new ApproachEstimator());
   const corridorTracker = useRef(new CorridorTracker());
-  const haptics = useMemo(() => new HapticManager(pattern => Vibration.vibrate(pattern),
-    () => Vibration.cancel()), []);
+  const haptics = useMemo(() => new HapticManager(pattern => {
+    if (Platform.OS === 'ios') Native.vibrate(pattern);
+    else Vibration.vibrate(pattern);
+  }, () => {
+    if (Platform.OS === 'ios') Native.cancelHaptics();
+    else Vibration.cancel();
+  }), []);
   const theme = useMemo(() => createTheme(highContrast, largeText, appearance),
     [highContrast, largeText, appearance]);
   const alerts = useMemo(() => new AlertManager(async (text, source) => {
@@ -192,9 +199,9 @@ function NaviApp() {
 
   useEffect(() => {
     Promise.all([
-      PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA),
-      PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO),
-      PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION),
+      checkPermission('camera'),
+      checkPermission('microphone'),
+      checkPermission('location'),
     ]).then(([camera, mic, location]) => {
       setCameraPermission(camera ? 'Granted' : 'Needed');
       setMicrophonePermission(mic ? 'Granted' : 'Needed');
@@ -359,7 +366,7 @@ function NaviApp() {
         Native.stopVoiceAgent().catch(() => {});
         setVoiceReady(false);
       } else if (state === 'active') {
-        if (voiceActivationRef.current) PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)
+        if (voiceActivationRef.current) checkPermission('microphone')
           .then(granted => { if (granted) Native.startVoiceAgent().catch(() => {}); });
       }
     });
@@ -423,8 +430,8 @@ function NaviApp() {
       setVoiceStatus('HANDS-FREE WAKE OFF');
       return;
     }
-    PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO).then(granted => {
-      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+    requestPermission('microphone').then(granted => {
+      if (granted) {
         setMicrophonePermission('Granted');
         Native.startVoiceAgent().catch((cause: unknown) => {
           setVoiceReady(false);
@@ -439,18 +446,17 @@ function NaviApp() {
     });
   }, [voicePreferenceReady, voiceActivation]);
 
-  async function request(permission: string): Promise<boolean> {
-    const granted = (await PermissionsAndroid.request(permission as any)) ===
-      PermissionsAndroid.RESULTS.GRANTED;
-    if (permission === PermissionsAndroid.PERMISSIONS.CAMERA) setCameraPermission(granted ? 'Granted' : 'Needed');
-    if (permission === PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)
+  async function request(permission: NaviPermission): Promise<boolean> {
+    const granted = await requestPermission(permission);
+    if (permission === 'camera') setCameraPermission(granted ? 'Granted' : 'Needed');
+    if (permission === 'microphone')
       setMicrophonePermission(granted ? 'Granted' : 'Needed');
-    if (permission === PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION)
+    if (permission === 'location')
       setLocationPermission(granted ? 'Granted' : 'Needed');
     return granted;
   }
   async function refreshLocation(): Promise<Fix | null> {
-    if (!await request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION)) {
+    if (!await request('location')) {
       haptics.error('gps-permission');
       setError('Precise location permission denied. Map routing needs GPS.'); return null;
     }
@@ -459,7 +465,7 @@ function NaviApp() {
   }
   async function startAssistance(): Promise<boolean> {
     setError('');
-    if (!await request(PermissionsAndroid.PERMISSIONS.CAMERA)) {
+    if (!await request('camera')) {
       setError('Camera permission denied. Object detection is unavailable.'); return false;
     }
     cameraReadyRef.current = false; setCameraReady(false); setLatency(null); setFps(null);
@@ -512,7 +518,7 @@ function NaviApp() {
   }
   async function listen() {
     setError('');
-    if (!await request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)) {
+    if (!await request('microphone')) {
       setError('Microphone permission denied. Use the on-screen controls.'); return;
     }
     try {
@@ -871,7 +877,7 @@ function NaviApp() {
       setError('Finish the current voice command before measuring an acoustic reflection.');
       return;
     }
-    if (!await request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)) {
+    if (!await request('microphone')) {
       setError('Microphone permission is required for experimental acoustic proximity.');
       return;
     }
@@ -912,14 +918,14 @@ function NaviApp() {
   }
   async function toggleWake() {
     if (voiceActivation) { setVoiceActivation(false); return; }
-    if (await request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)) setVoiceActivation(true);
+    if (await request('microphone')) setVoiceActivation(true);
     else setError('Microphone permission is needed for hands-free voice activation.');
   }
   async function checkSettingsPermissions() {
     const [camera, mic, location] = await Promise.all([
-      PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA),
-      PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO),
-      PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION),
+      checkPermission('camera'),
+      checkPermission('microphone'),
+      checkPermission('location'),
     ]);
     setCameraPermission(camera ? 'Granted' : 'Needed');
     setMicrophonePermission(mic ? 'Granted' : 'Needed');
@@ -936,7 +942,7 @@ function NaviApp() {
         sensitivity, seconds);
       setGuardian(state);
       if (enabled && !state.smsPermission) {
-        await PermissionsAndroid.request('android.permission.SEND_SMS' as any);
+        await requestAutomaticSmsPermission();
         setGuardian(await guardianCoordinator.state());
       }
     } catch (cause) { setGuardian(previous => ({...previous,

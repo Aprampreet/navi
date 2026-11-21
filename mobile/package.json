@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "android": "./scripts/run-usb-android.sh",
-    "ios": "react-native run-ios",
+    "ios": "./scripts/run-ios.sh",
     "lint": "eslint .",
     "start": "expo start --dev-client",
     "build:android": "npx eas-cli build --platform android --profile development",
